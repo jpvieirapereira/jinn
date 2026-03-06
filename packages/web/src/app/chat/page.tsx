@@ -1,18 +1,13 @@
-"use client";
-import { useState, useCallback, useEffect, useRef, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
-import { api } from "@/lib/api";
-import { useGateway } from "@/hooks/use-gateway";
-import { ChatSidebar } from "@/components/chat/chat-sidebar";
-import { ChatMessages } from "@/components/chat/chat-messages";
-import { ChatInput } from "@/components/chat/chat-input";
-
-interface Message {
-  role: "user" | "assistant";
-  content: string;
-  engine?: string;
-  model?: string;
-}
+"use client"
+import { useState, useCallback, useEffect, useRef, Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
+import { api } from '@/lib/api'
+import { useGateway } from '@/hooks/use-gateway'
+import { PageLayout } from '@/components/page-layout'
+import { ChatSidebar } from '@/components/chat/chat-sidebar'
+import { ChatMessages } from '@/components/chat/chat-messages'
+import { ChatInput } from '@/components/chat/chat-input'
+import type { Message, MediaAttachment } from '@/lib/conversations'
 
 const ONBOARDING_PROMPT = `This is your first time being activated. The user just set up Jimmy and opened the web dashboard for the first time.
 
@@ -20,307 +15,409 @@ Read your CLAUDE.md instructions and the onboarding skill at ~/.jimmy/skills/onb
 - Greet the user warmly and introduce yourself as Jimmy
 - Briefly explain what you can do (manage cron jobs, hire AI employees, connect to Slack, etc.)
 - Check if ~/.openclaw/ exists and mention migration if so
-- Ask the user what they'd like to set up first`;
+- Ask the user what they'd like to set up first`
 
 export default function ChatPageWrapper() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center h-screen text-neutral-400">Loading...</div>}>
+    <Suspense fallback={
+      <PageLayout>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-tertiary)' }}>
+          Loading...
+        </div>
+      </PageLayout>
+    }>
       <ChatPage />
     </Suspense>
-  );
+  )
 }
 
 function ChatPage() {
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [refreshKey, setRefreshKey] = useState(0);
-  const { events } = useGateway();
-  const searchParams = useSearchParams();
-  const onboardingTriggered = useRef(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [messages, setMessages] = useState<Message[]>([])
+  const [loading, setLoading] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [mobileView, setMobileView] = useState<'sidebar' | 'chat'>('sidebar')
+  const { events } = useGateway()
+  const searchParams = useSearchParams()
+  const onboardingTriggered = useRef(false)
+  const streamingRef = useRef(false)
 
   // Auto-trigger onboarding on first visit
   useEffect(() => {
-    if (onboardingTriggered.current) return;
+    if (onboardingTriggered.current) return
 
-    const shouldOnboard = searchParams.get("onboarding") === "1";
+    const shouldOnboard = searchParams.get('onboarding') === '1'
 
     if (shouldOnboard) {
-      onboardingTriggered.current = true;
-      triggerOnboarding();
+      onboardingTriggered.current = true
+      triggerOnboarding()
     } else {
-      // Also check via API in case user navigated directly to /chat
       api.getOnboarding().then((data) => {
         if (data.needed && !onboardingTriggered.current) {
-          onboardingTriggered.current = true;
-          triggerOnboarding();
+          onboardingTriggered.current = true
+          triggerOnboarding()
         }
-      }).catch(() => {});
+      }).catch(() => {})
     }
-  }, [searchParams]);
+  }, [searchParams])
 
   function triggerOnboarding() {
     setMessages([{
-      role: "assistant",
-      content: "Starting up for the first time...",
-    }]);
-    setLoading(true);
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      content: 'Starting up for the first time...',
+      timestamp: Date.now(),
+    }])
+    setLoading(true)
 
     api.createSession({
-      source: "web",
+      source: 'web',
       prompt: ONBOARDING_PROMPT,
     }).then((session) => {
-      const id = String((session as Record<string, unknown>).id);
-      setSelectedId(id);
-      setRefreshKey((k) => k + 1);
-      // Result will come via WebSocket session:completed event
+      const id = String((session as Record<string, unknown>).id)
+      setSelectedId(id)
+      setRefreshKey((k) => k + 1)
     }).catch((err) => {
-      setLoading(false);
+      setLoading(false)
       setMessages([{
-        role: "assistant",
-        content: `Failed to start onboarding: ${err instanceof Error ? err.message : "Unknown error"}`,
-      }]);
-    });
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: `Failed to start onboarding: ${err instanceof Error ? err.message : 'Unknown error'}`,
+        timestamp: Date.now(),
+      }])
+    })
   }
-
-  // Track whether we're currently streaming (to build up the assistant message)
-  const streamingRef = useRef(false);
 
   // Listen for session:delta and session:completed events
   useEffect(() => {
-    if (events.length === 0) return;
-    const latest = events[events.length - 1];
-    const payload = latest.payload as Record<string, unknown>;
+    if (events.length === 0) return
+    const latest = events[events.length - 1]
+    const payload = latest.payload as Record<string, unknown>
 
-    const matchesSession = selectedId && payload.sessionId === selectedId;
-    const isOnboarding = !selectedId && onboardingTriggered.current;
-    if (!matchesSession && !isOnboarding) return;
+    const matchesSession = selectedId && payload.sessionId === selectedId
+    const isOnboarding = !selectedId && onboardingTriggered.current
+    if (!matchesSession && !isOnboarding) return
 
-    if (latest.event === "session:delta") {
-      const delta = String(payload.delta || "");
-      if (!delta) return;
+    if (latest.event === 'session:delta') {
+      const delta = String(payload.delta || '')
+      if (!delta) return
 
       if (!streamingRef.current) {
-        // First delta — add a new assistant message
-        streamingRef.current = true;
+        streamingRef.current = true
         setMessages((prev) => [
           ...prev,
-          { role: "assistant" as const, content: delta },
-        ]);
+          {
+            id: crypto.randomUUID(),
+            role: 'assistant' as const,
+            content: delta,
+            timestamp: Date.now(),
+            isStreaming: true,
+          },
+        ])
       } else {
-        // Append to the last assistant message
         setMessages((prev) => {
-          const updated = [...prev];
-          const last = updated[updated.length - 1];
-          if (last && last.role === "assistant") {
+          const updated = [...prev]
+          const last = updated[updated.length - 1]
+          if (last && last.role === 'assistant') {
             updated[updated.length - 1] = {
               ...last,
               content: last.content + delta,
-            };
+            }
           }
-          return updated;
-        });
+          return updated
+        })
       }
     }
 
-    if (latest.event === "session:completed") {
+    if (latest.event === 'session:completed') {
       if (isOnboarding && payload.sessionId) {
-        setSelectedId(String(payload.sessionId));
+        setSelectedId(String(payload.sessionId))
       }
-      streamingRef.current = false;
-      setLoading(false);
+      streamingRef.current = false
+      setLoading(false)
 
-      // If we never got any deltas, show the final result
       if (payload.result) {
         setMessages((prev) => {
-          const last = prev[prev.length - 1];
-          if (last && last.role === "assistant" && last.content) {
-            // Already have streamed content — replace with final result
-            const updated = [...prev];
+          const last = prev[prev.length - 1]
+          if (last && last.role === 'assistant' && last.content) {
+            const updated = [...prev]
             updated[updated.length - 1] = {
               ...last,
               content: String(payload.result),
-            };
-            return updated;
+              isStreaming: false,
+            }
+            return updated
           }
           return [
             ...prev,
-            { role: "assistant" as const, content: String(payload.result) },
-          ];
-        });
+            {
+              id: crypto.randomUUID(),
+              role: 'assistant' as const,
+              content: String(payload.result),
+              timestamp: Date.now(),
+            },
+          ]
+        })
       }
       if (payload.error && !payload.result) {
         setMessages((prev) => [
           ...prev,
-          { role: "assistant" as const, content: `Error: ${payload.error}` },
-        ]);
+          {
+            id: crypto.randomUUID(),
+            role: 'assistant' as const,
+            content: `Error: ${payload.error}`,
+            timestamp: Date.now(),
+          },
+        ])
       }
-      setRefreshKey((k) => k + 1);
+      setRefreshKey((k) => k + 1)
     }
-  }, [events, selectedId]);
+  }, [events, selectedId])
 
   const loadSession = useCallback(async (id: string) => {
     try {
-      const session = (await api.getSession(id)) as Record<string, unknown>;
-      const history = session.messages || session.history || [];
+      const session = (await api.getSession(id)) as Record<string, unknown>
+      const history = session.messages || session.history || []
       if (Array.isArray(history)) {
         setMessages(
           history.map((m: Record<string, unknown>) => ({
-            role: (m.role as "user" | "assistant") || "assistant",
-            content: String(m.content || m.text || ""),
-            engine: m.engine ? String(m.engine) : undefined,
-            model: m.model ? String(m.model) : undefined,
+            id: crypto.randomUUID(),
+            role: (m.role as 'user' | 'assistant') || 'assistant',
+            content: String(m.content || m.text || ''),
+            timestamp: m.timestamp ? Number(m.timestamp) : Date.now(),
           }))
-        );
+        )
       }
-      // Check if session is currently running
-      if (session.status === "running") {
-        setLoading(true);
+      if (session.status === 'running') {
+        setLoading(true)
       }
     } catch {
-      setMessages([]);
+      setMessages([])
     }
-  }, []);
+  }, [])
 
   const handleSelect = useCallback(
     (id: string) => {
-      setSelectedId(id);
-      setMessages([]);
-      setLoading(false);
-      loadSession(id);
+      setSelectedId(id)
+      setMessages([])
+      setLoading(false)
+      streamingRef.current = false
+      setMobileView('chat')
+      loadSession(id)
     },
     [loadSession]
-  );
+  )
 
   const handleNewChat = useCallback(() => {
-    setSelectedId(null);
-    setMessages([]);
-    setLoading(false);
-  }, []);
+    setSelectedId(null)
+    setMessages([])
+    setLoading(false)
+    streamingRef.current = false
+    setMobileView('chat')
+  }, [])
 
   const handleSend = useCallback(
-    async (message: string) => {
-      // Don't show the raw onboarding prompt as a user message
-      const isOnboardingMsg = message === ONBOARDING_PROMPT;
+    async (message: string, media?: MediaAttachment[]) => {
+      const isOnboardingMsg = message === ONBOARDING_PROMPT
       if (!isOnboardingMsg) {
-        const userMsg: Message = { role: "user", content: message };
-        setMessages((prev) => [...prev, userMsg]);
+        const userMsg: Message = {
+          id: crypto.randomUUID(),
+          role: 'user',
+          content: message,
+          timestamp: Date.now(),
+          media,
+        }
+        setMessages((prev) => [...prev, userMsg])
       }
-      setLoading(true);
-      streamingRef.current = false;
+      setLoading(true)
+      streamingRef.current = false
 
       try {
-        let sessionId = selectedId;
+        let sessionId = selectedId
 
         if (!sessionId) {
-          // Create a new session — API returns immediately, result comes via WebSocket
           const session = (await api.createSession({
-            source: "web",
+            source: 'web',
             prompt: message,
-          })) as Record<string, unknown>;
-          sessionId = String(session.id);
-          setSelectedId(sessionId);
-          setRefreshKey((k) => k + 1);
-          // Wait for session:completed WebSocket event (handled in useEffect above)
+          })) as Record<string, unknown>
+          sessionId = String(session.id)
+          setSelectedId(sessionId)
+          setRefreshKey((k) => k + 1)
         } else {
-          // Send message to existing session — result comes via WebSocket
-          await api.sendMessage(sessionId, { message });
-          setRefreshKey((k) => k + 1);
-          // Wait for session:completed WebSocket event
+          await api.sendMessage(sessionId, { message })
+          setRefreshKey((k) => k + 1)
         }
       } catch (err) {
-        setLoading(false);
+        setLoading(false)
         setMessages((prev) => [
           ...prev,
           {
-            role: "assistant" as const,
-            content: `Error: ${err instanceof Error ? err.message : "Failed to send message"}`,
+            id: crypto.randomUUID(),
+            role: 'assistant' as const,
+            content: `Error: ${err instanceof Error ? err.message : 'Failed to send message'}`,
+            timestamp: Date.now(),
           },
-        ]);
+        ])
       }
     },
     [selectedId]
-  );
+  )
 
   const handleStatusRequest = useCallback(async () => {
     if (!selectedId) {
       setMessages((prev) => [
         ...prev,
         {
-          role: "assistant" as const,
-          content: "No active session. Send a message to start one.",
+          id: crypto.randomUUID(),
+          role: 'assistant' as const,
+          content: 'No active session. Send a message to start one.',
+          timestamp: Date.now(),
         },
-      ]);
-      return;
+      ])
+      return
     }
 
     try {
-      const session = (await api.getSession(selectedId)) as Record<
-        string,
-        unknown
-      >;
+      const session = (await api.getSession(selectedId)) as Record<string, unknown>
       const info = [
-        `**Session Info**`,
+        '**Session Info**',
         `ID: \`${session.id}\``,
-        `Status: ${session.status || "unknown"}`,
+        `Status: ${session.status || 'unknown'}`,
         session.employee ? `Employee: ${session.employee}` : null,
         session.engine ? `Engine: ${session.engine}` : null,
         session.model ? `Model: ${session.model}` : null,
         session.createdAt ? `Created: ${session.createdAt}` : null,
       ]
         .filter(Boolean)
-        .join("\n");
+        .join('\n')
 
       setMessages((prev) => [
         ...prev,
-        { role: "assistant" as const, content: info },
-      ]);
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant' as const,
+          content: info,
+          timestamp: Date.now(),
+        },
+      ])
     } catch {
       setMessages((prev) => [
         ...prev,
         {
-          role: "assistant" as const,
-          content: "Failed to fetch session status.",
+          id: crypto.randomUUID(),
+          role: 'assistant' as const,
+          content: 'Failed to fetch session status.',
+          timestamp: Date.now(),
         },
-      ]);
+      ])
     }
-  }, [selectedId]);
+  }, [selectedId])
 
   return (
-    <div
-      className="flex -m-8"
-      style={{ height: "calc(100vh)" }}
-    >
-      {/* Sidebar */}
-      <div className="w-[250px] flex-shrink-0">
-        <ChatSidebar
-          selectedId={selectedId}
-          onSelect={handleSelect}
-          onNewChat={handleNewChat}
-          refreshKey={refreshKey}
-        />
-      </div>
-
-      {/* Main chat area */}
-      <div className="flex-1 flex flex-col bg-white">
-        {/* Header */}
-        <div className="px-4 py-3 border-b border-neutral-200 bg-white">
-          <h2 className="text-sm font-medium text-neutral-800">
-            {selectedId ? `Session ${selectedId.slice(0, 8)}...` : "New Chat"}
-          </h2>
+    <PageLayout>
+      <div style={{
+        display: 'flex',
+        height: '100%',
+        overflow: 'hidden',
+      }}>
+        {/* Desktop sidebar — always visible on md+ */}
+        <div className="hidden md:block" style={{ width: 280, flexShrink: 0, height: '100%' }}>
+          <ChatSidebar
+            selectedId={selectedId}
+            onSelect={handleSelect}
+            onNewChat={handleNewChat}
+            refreshKey={refreshKey}
+          />
         </div>
 
-        {/* Messages */}
-        <ChatMessages messages={messages} loading={loading} />
+        {/* Mobile: sidebar view */}
+        <div
+          className="md:hidden"
+          style={{
+            width: '100%',
+            height: '100%',
+            display: mobileView === 'sidebar' ? 'block' : 'none',
+          }}
+        >
+          <ChatSidebar
+            selectedId={selectedId}
+            onSelect={handleSelect}
+            onNewChat={handleNewChat}
+            refreshKey={refreshKey}
+          />
+        </div>
 
-        {/* Input */}
-        <ChatInput
-          disabled={loading}
-          onSend={handleSend}
-          onNewSession={handleNewChat}
-          onStatusRequest={handleStatusRequest}
-        />
+        {/* Chat area */}
+        <div
+          style={{
+            flex: 1,
+            display: 'flex',
+            flexDirection: 'column',
+            height: '100%',
+            background: 'var(--bg)',
+            minWidth: 0,
+          }}
+          className={mobileView === 'sidebar' ? 'hidden md:flex' : 'flex'}
+        >
+          {/* Header */}
+          <div style={{
+            height: 52,
+            display: 'flex',
+            alignItems: 'center',
+            padding: '0 var(--space-4)',
+            borderBottom: '1px solid var(--separator)',
+            background: 'var(--material-thick)',
+            flexShrink: 0,
+          }}>
+            {/* Mobile back button */}
+            <button
+              className="md:hidden"
+              onClick={() => setMobileView('sidebar')}
+              aria-label="Back to sessions"
+              style={{
+                padding: 'var(--space-1) var(--space-2)',
+                borderRadius: 'var(--radius-sm)',
+                marginRight: 'var(--space-2)',
+                fontSize: 'var(--text-subheadline)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 'var(--space-1)',
+                background: 'transparent',
+                border: 'none',
+                cursor: 'pointer',
+                color: 'var(--accent)',
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+              Back
+            </button>
+
+            <div style={{ flex: 1 }}>
+              <div style={{
+                fontSize: 'var(--text-subheadline)',
+                fontWeight: 'var(--weight-semibold)',
+                color: 'var(--text-primary)',
+                letterSpacing: '-0.2px',
+              }}>
+                {selectedId ? `Session ${selectedId.slice(0, 8)}...` : 'New Chat'}
+              </div>
+            </div>
+          </div>
+
+          {/* Messages */}
+          <ChatMessages messages={messages} loading={loading} />
+
+          {/* Input */}
+          <ChatInput
+            disabled={loading}
+            onSend={handleSend}
+            onNewSession={handleNewChat}
+            onStatusRequest={handleStatusRequest}
+          />
+        </div>
       </div>
-    </div>
-  );
+    </PageLayout>
+  )
 }
