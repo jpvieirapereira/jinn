@@ -14,8 +14,9 @@ program
 program
   .command("setup")
   .description("Initialize Jimmy and install dependencies")
-  .action(async () => {
-    await runSetup();
+  .option("--force", "Delete existing ~/.jimmy and reinitialize from scratch")
+  .action(async (opts) => {
+    await runSetup(opts);
   });
 
 program

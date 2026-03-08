@@ -365,8 +365,35 @@ export function ChatMessages({ messages, loading }: ChatMessagesProps) {
               </div>
             )}
 
+            {/* Tool call message — compact row */}
+            {!isUser && msg.toolCall && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'flex-start',
+                padding: '0 var(--space-4)',
+                marginBottom: 'var(--space-1)',
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--space-2)',
+                  padding: '4px var(--space-3)',
+                  borderRadius: 'var(--radius-full, 999px)',
+                  background: 'var(--fill-secondary)',
+                  border: '1px solid var(--separator)',
+                  fontSize: 'var(--text-caption1)',
+                  color: 'var(--text-secondary)',
+                }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.6 }}>
+                    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+                  </svg>
+                  {msg.content}
+                </div>
+              </div>
+            )}
+
             {/* Assistant message */}
-            {!isUser && (
+            {!isUser && !msg.toolCall && (
               <div style={{
                 display: 'flex',
                 justifyContent: 'flex-start',
@@ -432,6 +459,32 @@ export function ChatMessages({ messages, loading }: ChatMessagesProps) {
                     </div>
                   )}
 
+                  {/* Tool status indicator */}
+                  {msg.toolStatus && (
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 'var(--space-2)',
+                      marginTop: 'var(--space-2)',
+                      padding: 'var(--space-1) var(--space-3)',
+                      borderRadius: 'var(--radius-full, 999px)',
+                      background: 'var(--fill-secondary)',
+                      border: '1px solid var(--separator)',
+                      fontSize: 'var(--text-caption2)',
+                      color: 'var(--text-secondary)',
+                      width: 'fit-content',
+                    }}>
+                      <span style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: '50%',
+                        background: 'var(--system-blue)',
+                        animation: 'jimmy-pulse 1.4s infinite',
+                      }} />
+                      Using {msg.toolStatus}
+                    </div>
+                  )}
+
                   {/* Media attachments */}
                   {media.length > 0 && renderMedia(media, false)}
                 </div>
@@ -442,7 +495,7 @@ export function ChatMessages({ messages, loading }: ChatMessagesProps) {
       })}
 
       {/* Global loading indicator when no messages are streaming yet */}
-      {loading && messages.length > 0 && !messages[messages.length - 1]?.isStreaming && messages[messages.length - 1]?.role === 'user' && (
+      {loading && messages.length > 0 && !messages[messages.length - 1]?.isStreaming && (messages[messages.length - 1]?.role === 'user' || messages[messages.length - 1]?.toolCall) && (
         <div style={{
           display: 'flex',
           justifyContent: 'flex-start',

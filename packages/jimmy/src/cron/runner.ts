@@ -3,6 +3,7 @@ import { buildContext } from "../sessions/context.js";
 import { JIMMY_HOME } from "../shared/paths.js";
 import { logger } from "../shared/logger.js";
 import { appendRunLog } from "./jobs.js";
+import { scanOrg, findEmployee } from "../gateway/org.js";
 
 export async function runCronJob(
   job: CronJob,
@@ -23,12 +24,20 @@ export async function runCronJob(
   const model =
     job.model || config.engines[engineName as "claude" | "codex"]?.model;
 
-  // 2. Build context
+  // 2. Build context (with employee, config, and connectors)
+  let employee;
+  if (job.employee) {
+    const orgRegistry = scanOrg();
+    employee = findEmployee(job.employee, orgRegistry);
+  }
+
   const ctx = buildContext({
     source: "cron",
     channel: job.id,
     user: "system",
-    // employee lookup would go here if job.employee is set
+    employee,
+    config,
+    connectors: Array.from(connectors.keys()),
   });
 
   // 3. Run engine (fresh session, no resume)

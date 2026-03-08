@@ -99,30 +99,68 @@ function ChatPage() {
     if (!matchesSession && !isOnboarding) return
 
     if (latest.event === 'session:delta') {
-      const delta = String(payload.delta || '')
-      if (!delta) return
+      const deltaType = String(payload.type || 'text')
+      const content = String(payload.content || '')
 
-      if (!streamingRef.current) {
-        streamingRef.current = true
+      if (deltaType === 'text') {
+        if (!content) return
+        if (!streamingRef.current) {
+          streamingRef.current = true
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              role: 'assistant' as const,
+              content,
+              timestamp: Date.now(),
+              isStreaming: true,
+            },
+          ])
+        } else {
+          setMessages((prev) => {
+            const updated = [...prev]
+            const last = updated[updated.length - 1]
+            if (last && last.role === 'assistant') {
+              updated[updated.length - 1] = {
+                ...last,
+                content: last.content + content,
+              }
+            }
+            return updated
+          })
+        }
+      } else if (deltaType === 'tool_use') {
+        const toolName = String(payload.toolName || 'tool')
+        // If we have a streaming text message, finalize it before adding tool call
+        if (streamingRef.current) {
+          setMessages((prev) => {
+            const updated = [...prev]
+            const last = updated[updated.length - 1]
+            if (last && last.role === 'assistant' && last.isStreaming) {
+              updated[updated.length - 1] = { ...last, isStreaming: false }
+            }
+            return updated
+          })
+          streamingRef.current = false
+        }
+        // Add tool call as a separate message
         setMessages((prev) => [
           ...prev,
           {
             id: crypto.randomUUID(),
             role: 'assistant' as const,
-            content: delta,
+            content: `Using ${toolName}`,
             timestamp: Date.now(),
-            isStreaming: true,
+            toolCall: toolName,
           },
         ])
-      } else {
+      } else if (deltaType === 'tool_result') {
+        // Mark the tool call message as completed
         setMessages((prev) => {
           const updated = [...prev]
           const last = updated[updated.length - 1]
-          if (last && last.role === 'assistant') {
-            updated[updated.length - 1] = {
-              ...last,
-              content: last.content + delta,
-            }
+          if (last && last.role === 'assistant' && last.toolCall) {
+            updated[updated.length - 1] = { ...last, content: `Used ${last.toolCall}`, toolStatus: undefined }
           }
           return updated
         })

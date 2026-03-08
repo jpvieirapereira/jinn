@@ -12,6 +12,7 @@ import {
   getSessionBySourceRef,
   updateSession,
   deleteSession,
+  insertMessage,
 } from "./registry.js";
 import { buildContext } from "./context.js";
 import { SessionQueue } from "./queue.js";
@@ -96,11 +97,13 @@ export class SessionManager {
       return;
     }
 
+    // Persist user message
+    insertMessage(session.id, "user", prompt);
+
     // Add eyes reaction to the user's message
     await connector.addReaction(target, "eyes").catch(() => {});
 
     // Post a "thinking" placeholder message
-    const thinkingTarget = { ...target };
     const thinkingTs = await connector.sendMessage(
       { channel: target.channel, thread: target.thread || target.messageTs },
       "_Thinking..._",
@@ -126,6 +129,12 @@ export class SessionManager {
         ? this.config.engines.codex
         : this.config.engines.claude;
 
+      // Build streaming callback for connectors when enabled
+      const streaming = this.config.gateway.streaming ?? false;
+      let lastEditTime = 0;
+      let streamedText = "";
+      const THROTTLE_MS = 1500; // Slack rate limit friendly
+
       const result = await engine.run({
         prompt,
         resumeSessionId: session.engineSessionId ?? undefined,
@@ -134,12 +143,28 @@ export class SessionManager {
         bin: engineConfig.bin,
         model: session.model ?? engineConfig.model,
         attachments: attachments.length > 0 ? attachments : undefined,
+        onStream: streaming ? (delta) => {
+          if (delta.type === "text" && delta.content && thinkingTs) {
+            streamedText += delta.content;
+            const now = Date.now();
+            if (now - lastEditTime > THROTTLE_MS) {
+              lastEditTime = now;
+              connector.editMessage(
+                { channel: target.channel, thread: target.thread || target.messageTs, messageTs: thinkingTs },
+                streamedText + " ▍",
+              ).catch(() => {});
+            }
+          }
+        } : undefined,
       });
 
       // Edit the thinking message with the actual response, or send new if edit fails
       const responseText = result.result?.trim()
         ? result.result
         : result.error || "(No response from engine)";
+
+      // Persist assistant response
+      insertMessage(session.id, "assistant", responseText);
 
       if (thinkingTs) {
         await connector.editMessage(

@@ -3,6 +3,8 @@ import path from "node:path";
 import type { Employee, JimmyConfig } from "../shared/types.js";
 import { JIMMY_HOME, SKILLS_DIR, ORG_DIR, CRON_JOBS, DOCS_DIR } from "../shared/paths.js";
 
+const MAX_CONTEXT_CHARS = 32000;
+
 /**
  * Build a rich system prompt for engine sessions.
  * This is what makes Jimmy "smart" — the engine sees all of this context
@@ -24,6 +26,11 @@ export function buildContext(opts: {
     sections.push(buildEmployeeIdentity(opts.employee));
   } else {
     sections.push(buildIdentity());
+  }
+
+  // ── Self-evolution ────────────────────────────────────────
+  if (!opts.employee) {
+    sections.push(buildEvolutionContext());
   }
 
   // ── CLAUDE.md (user-defined instructions) ─────────────────
@@ -68,7 +75,8 @@ export function buildContext(opts: {
   // ── Gateway API reference ─────────────────────────────────
   sections.push(buildApiReference());
 
-  return sections.join("\n\n");
+  // ── Size guard: progressively trim if over budget ─────────
+  return trimContext(sections);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -187,11 +195,16 @@ function buildOrgContext(): string | null {
     for (const file of files) {
       const content = fs.readFileSync(path.join(ORG_DIR, file), "utf-8");
       const name = file.replace(/\.ya?ml$/, "");
-      // Extract display name and department from YAML (simple parse)
+      // Extract display name, department, rank, and persona first line from YAML
       const displayMatch = content.match(/displayName:\s*(.+)/);
       const deptMatch = content.match(/department:\s*(.+)/);
       const rankMatch = content.match(/rank:\s*(.+)/);
-      lines.push(`- **${displayMatch?.[1] || name}** (${name}) — ${deptMatch?.[1] || "unassigned"}, ${rankMatch?.[1] || "employee"}`);
+      const personaMatch = content.match(/persona:\s*[|>]?\s*\n?\s*(.+)/);
+      let entry = `- **${displayMatch?.[1] || name}** (${name}) — ${deptMatch?.[1] || "unassigned"}, ${rankMatch?.[1] || "employee"}`;
+      if (personaMatch?.[1]) {
+        entry += `\n  _${personaMatch[1].trim().slice(0, 120)}_`;
+      }
+      lines.push(entry);
     }
     lines.push(`\nYou can create new employees by writing YAML files to \`${ORG_DIR}/\``);
     return lines.join("\n");
@@ -202,16 +215,25 @@ function buildOrgContext(): string | null {
 
 function buildSkillsContext(): string | null {
   try {
-    const files = fs.readdirSync(SKILLS_DIR).filter(f => f.endsWith(".md") || f.endsWith(".txt"));
-    if (files.length === 0) return null;
+    const entries = fs.readdirSync(SKILLS_DIR, { withFileTypes: true });
+    const dirs = entries.filter(e => e.isDirectory());
+    if (dirs.length === 0) return null;
 
-    const lines: string[] = [`## Available skills (${files.length})`];
-    for (const file of files) {
-      const name = file.replace(/\.(md|txt)$/, "");
-      lines.push(`- ${name}`);
+    const lines: string[] = [`## Available skills (${dirs.length})`];
+    for (const dir of dirs) {
+      const skillPath = path.join(SKILLS_DIR, dir.name, "SKILL.md");
+      try {
+        const content = fs.readFileSync(skillPath, "utf-8").trim();
+        if (content.length <= 500) {
+          lines.push(`### ${dir.name}\n${content}`);
+        } else {
+          lines.push(`### ${dir.name}\n${content.slice(0, 500)}...\n_(full instructions: ${skillPath})_`);
+        }
+      } catch {
+        lines.push(`- ${dir.name} (no SKILL.md found)`);
+      }
     }
-    lines.push(`\nSkill files are in \`${SKILLS_DIR}/\`. You can read them for detailed instructions.`);
-    return lines.join("\n");
+    return lines.join("\n\n");
   } catch {
     return null;
   }
@@ -241,7 +263,7 @@ function buildKnowledgeContext(): string | null {
   for (const dir of dirs) {
     try {
       const files = fs.readdirSync(dir).filter(f => f.endsWith(".md") || f.endsWith(".txt") || f.endsWith(".yaml"));
-      allFiles.push(...files.map(f => `${dir}/${f}`));
+      allFiles.push(...files.map(f => path.join(dir, f)));
     } catch {
       // dir doesn't exist
     }
@@ -249,12 +271,32 @@ function buildKnowledgeContext(): string | null {
 
   if (allFiles.length === 0) return null;
 
+  const MAX_PER_FILE = 1000;
+  const MAX_TOTAL = 4000;
+  let totalChars = 0;
+
   const lines: string[] = [`## Knowledge base (${allFiles.length} file(s))`];
   for (const file of allFiles) {
-    lines.push(`- \`${file}\``);
+    if (totalChars >= MAX_TOTAL) {
+      lines.push(`\n_(${allFiles.length - lines.length + 1} more files — read them directly from \`${DOCS_DIR}/\` or \`~/.jimmy/knowledge/\`)_`);
+      break;
+    }
+    try {
+      const content = fs.readFileSync(file, "utf-8").trim();
+      const basename = path.basename(file);
+      if (content.length <= MAX_PER_FILE) {
+        lines.push(`### ${basename}\n${content}`);
+        totalChars += content.length;
+      } else {
+        const slice = content.slice(0, MAX_PER_FILE);
+        lines.push(`### ${basename}\n${slice}...\n_(full file: ${file})_`);
+        totalChars += MAX_PER_FILE;
+      }
+    } catch {
+      lines.push(`- \`${file}\` (unreadable)`);
+    }
   }
-  lines.push(`\nYou can read these files for detailed information when needed.`);
-  return lines.join("\n");
+  return lines.join("\n\n");
 }
 
 function buildConnectorContext(connectors: string[]): string {
@@ -321,6 +363,61 @@ function buildEnvironmentContext(): string | null {
 
   lines.push(`\nWhen the user asks about tools or systems on their machine, check these directories first before saying you don't know. Be resourceful — explore the filesystem.`);
   return lines.join("\n");
+}
+
+function buildEvolutionContext(): string {
+  const profilePath = path.join(JIMMY_HOME, "knowledge", "user-profile.md");
+  let profileContent = "";
+  try { profileContent = fs.readFileSync(profilePath, "utf-8").trim(); } catch {}
+
+  const isNew = profileContent.length < 50;
+
+  const lines: string[] = [`## Self-evolution`];
+
+  if (isNew) {
+    lines.push(`**ONBOARDING MODE**: This is a new or unconfigured Jimmy installation.`);
+    lines.push(`Before answering the user's request, introduce yourself briefly and ask them:`);
+    lines.push(`1. What's your name and what do you do? (business, role, projects)`);
+    lines.push(`2. What should Jimmy help you automate? (code reviews, deployments, monitoring, etc.)`);
+    lines.push(`3. Communication preferences — emoji style, verbosity (concise vs detailed), language`);
+    lines.push(`4. Any active projects Jimmy should know about?`);
+    lines.push(`\nAfter the user responds, write their answers to \`~/.jimmy/knowledge/user-profile.md\` and \`~/.jimmy/knowledge/preferences.md\`.`);
+    lines.push(`Then proceed to help with their original request.`);
+  } else {
+    lines.push(`You learn and evolve over time. When you discover new information about the user, their projects, or their preferences:`);
+    lines.push(`- Update \`~/.jimmy/knowledge/user-profile.md\` with business/identity info`);
+    lines.push(`- Update \`~/.jimmy/knowledge/preferences.md\` with style/communication preferences`);
+    lines.push(`- Update \`~/.jimmy/knowledge/projects.md\` with project details`);
+    lines.push(`- If the user gives you persistent feedback (e.g. "always do X", "never do Y"), update \`~/.jimmy/CLAUDE.md\``);
+    lines.push(`\nDo this silently — don't announce every file update. Just evolve.`);
+  }
+
+  return lines.join("\n");
+}
+
+function trimContext(sections: string[]): string {
+  let result = sections.join("\n\n");
+  if (result.length <= MAX_CONTEXT_CHARS) return result;
+
+  // Progressive trimming: replace non-essential sections with compact summaries
+  // Order: environment > knowledge content > skill content > org personas
+  const trimmable = [
+    { marker: "## Local environment", summary: "## Local environment\nRun `ls ~/` to explore the local filesystem." },
+    { marker: "## Knowledge base", summary: "## Knowledge base\nKnowledge files are in `~/.jimmy/knowledge/` and `~/.jimmy/docs/`. Read them directly when needed." },
+    { marker: "## Available skills", summary: "## Available skills\nSkills are in `~/.jimmy/skills/`. Read individual SKILL.md files when needed." },
+    { marker: "## Organization", summary: "## Organization\nEmployee files are in `~/.jimmy/org/`. Read them directly when needed." },
+  ];
+
+  for (const { marker, summary } of trimmable) {
+    if (result.length <= MAX_CONTEXT_CHARS) break;
+    const idx = sections.findIndex(s => s.startsWith(marker));
+    if (idx !== -1) {
+      sections[idx] = summary;
+      result = sections.join("\n\n");
+    }
+  }
+
+  return result;
 }
 
 function buildApiReference(): string {

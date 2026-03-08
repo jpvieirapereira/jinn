@@ -66,6 +66,35 @@ function ensureFile(filePath: string, content: string): boolean {
   return true;
 }
 
+/**
+ * Recursively copy template directory contents into dest, skipping files that already exist.
+ * Returns list of created file paths.
+ */
+function copyTemplateDir(srcDir: string, destDir: string): string[] {
+  const created: string[] = [];
+  if (!fs.existsSync(srcDir)) return created;
+
+  fs.mkdirSync(destDir, { recursive: true });
+
+  const entries = fs.readdirSync(srcDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(srcDir, entry.name);
+    const destPath = path.join(destDir, entry.name);
+
+    if (entry.isDirectory()) {
+      created.push(...copyTemplateDir(srcPath, destPath));
+    } else if (entry.name === ".gitkeep") {
+      // skip .gitkeep — directory already created
+      continue;
+    } else if (!fs.existsSync(destPath)) {
+      fs.mkdirSync(path.dirname(destPath), { recursive: true });
+      fs.copyFileSync(srcPath, destPath);
+      created.push(destPath);
+    }
+  }
+  return created;
+}
+
 const DEFAULT_CONFIG = `gateway:
   port: 7777
   host: "127.0.0.1"
@@ -96,8 +125,14 @@ const DEFAULT_AGENTS_MD = `# Jimmy Agents
 Agents are configured via employees in the org/ directory.
 `;
 
-export async function runSetup(): Promise<void> {
+export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   console.log("\nJimmy Setup\n");
+
+  if (opts?.force && fs.existsSync(JIMMY_HOME)) {
+    console.log(`  ${YELLOW}[force]${RESET} Removing ${JIMMY_HOME}...`);
+    fs.rmSync(JIMMY_HOME, { recursive: true, force: true });
+    console.log(`  ${GREEN}[ok]${RESET} Removed ${JIMMY_HOME}\n`);
+  }
 
   // 1. Check Node.js version
   const nodeVersion = parseInt(process.versions.node.split(".")[0], 10);
@@ -202,9 +237,16 @@ export async function runSetup(): Promise<void> {
 
   // Other standard dirs
   if (ensureDir(LOGS_DIR)) created.push(LOGS_DIR);
-  if (ensureDir(DOCS_DIR)) created.push(DOCS_DIR);
-  if (ensureDir(SKILLS_DIR)) created.push(SKILLS_DIR);
-  if (ensureDir(ORG_DIR)) created.push(ORG_DIR);
+
+  // Copy template contents for docs, skills, and org (skips existing files)
+  created.push(...copyTemplateDir(path.join(TEMPLATE_DIR, "docs"), DOCS_DIR));
+  created.push(...copyTemplateDir(path.join(TEMPLATE_DIR, "skills"), SKILLS_DIR));
+  created.push(...copyTemplateDir(path.join(TEMPLATE_DIR, "org"), ORG_DIR));
+
+  // Ensure dirs exist even if template had nothing to copy
+  ensureDir(DOCS_DIR);
+  ensureDir(SKILLS_DIR);
+  ensureDir(ORG_DIR);
 
   // 12. Print summary
   console.log("");

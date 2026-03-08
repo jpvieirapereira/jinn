@@ -10,8 +10,22 @@ import { startGateway } from "./server.js";
 export async function startForeground(config: JimmyConfig): Promise<void> {
   const cleanup = await startGateway(config);
 
+  let shuttingDown = false;
   const shutdown = async () => {
+    if (shuttingDown) {
+      logger.info("Forced exit");
+      process.exit(1);
+    }
+    shuttingDown = true;
     logger.info("Shutting down gateway...");
+
+    // Force exit if graceful shutdown takes too long
+    const forceTimer = setTimeout(() => {
+      logger.warn("Graceful shutdown timed out, forcing exit");
+      process.exit(1);
+    }, 5000);
+    forceTimer.unref();
+
     await cleanup();
     process.exit(0);
   };

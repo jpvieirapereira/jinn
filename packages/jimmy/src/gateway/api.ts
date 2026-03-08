@@ -9,6 +9,8 @@ import {
   getSession,
   createSession,
   updateSession,
+  insertMessage,
+  getMessages,
 } from "../sessions/registry.js";
 import {
   CONFIG_PATH,
@@ -113,7 +115,20 @@ export async function handleApiRequest(
     if (method === "GET" && params) {
       const session = getSession(params.id);
       if (!session) return notFound(res);
-      return json(res, session);
+      let messages = getMessages(params.id);
+
+      // Backfill from Claude Code's JSONL transcript if our DB has no messages
+      if (messages.length === 0 && session.engineSessionId) {
+        const transcriptMessages = loadTranscriptMessages(session.engineSessionId);
+        if (transcriptMessages.length > 0) {
+          for (const tm of transcriptMessages) {
+            insertMessage(params.id, tm.role, tm.content);
+          }
+          messages = getMessages(params.id);
+        }
+      }
+
+      return json(res, { ...session, messages });
     }
 
     // POST /api/sessions
@@ -133,12 +148,28 @@ export async function handleApiRequest(
 
       // Run engine asynchronously — respond immediately, push result via WebSocket
       const engine = context.sessionManager.getEngine(engineName);
-      if (engine) {
-        context.emit("session:started", { sessionId: session.id });
-        runWebSession(session, prompt, engine, config, context).catch((err) => {
-          logger.error(`Web session ${session.id} error: ${err}`);
+      if (!engine) {
+        updateSession(session.id, {
+          status: "error",
+          lastError: `Engine "${engineName}" not available`,
         });
+        return json(res, { ...session, status: "error", lastError: `Engine "${engineName}" not available` }, 201);
       }
+
+      context.emit("session:started", { sessionId: session.id });
+      runWebSession(session, prompt, engine, config, context).catch((err) => {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        logger.error(`Web session ${session.id} error: ${errMsg}`);
+        updateSession(session.id, {
+          status: "error",
+          lastError: errMsg,
+        });
+        context.emit("session:completed", {
+          sessionId: session.id,
+          result: null,
+          error: errMsg,
+        });
+      });
 
       return json(res, session, 201);
     }
@@ -158,7 +189,17 @@ export async function handleApiRequest(
 
       context.emit("session:started", { sessionId: session.id });
       runWebSession(session, prompt, engine, config, context).catch((err) => {
-        logger.error(`Web session ${session.id} error: ${err}`);
+        const errMsg = err instanceof Error ? err.message : String(err);
+        logger.error(`Web session ${session.id} error: ${errMsg}`);
+        updateSession(session.id, {
+          status: "error",
+          lastError: errMsg,
+        });
+        context.emit("session:completed", {
+          sessionId: session.id,
+          result: null,
+          error: errMsg,
+        });
       });
 
       return json(res, { status: "queued", sessionId: session.id });
@@ -344,6 +385,55 @@ export async function handleApiRequest(
 }
 
 /**
+ * Load messages from a Claude Code JSONL transcript file.
+ * Used as a fallback when the messages DB is empty (pre-existing sessions).
+ */
+function loadTranscriptMessages(engineSessionId: string): Array<{ role: string; content: string }> {
+  // Claude Code stores transcripts in ~/.claude/projects/<project-key>/<sessionId>.jsonl
+  const claudeProjectsDir = path.join(
+    process.env.HOME || process.env.USERPROFILE || "",
+    ".claude",
+    "projects",
+  );
+  if (!fs.existsSync(claudeProjectsDir)) return [];
+
+  // Search all project dirs for the transcript
+  const projectDirs = fs.readdirSync(claudeProjectsDir, { withFileTypes: true });
+  for (const dir of projectDirs) {
+    if (!dir.isDirectory()) continue;
+    const jsonlPath = path.join(claudeProjectsDir, dir.name, `${engineSessionId}.jsonl`);
+    if (!fs.existsSync(jsonlPath)) continue;
+
+    const messages: Array<{ role: string; content: string }> = [];
+    const lines = fs.readFileSync(jsonlPath, "utf-8").trim().split("\n").filter(Boolean);
+    for (const line of lines) {
+      try {
+        const obj = JSON.parse(line);
+        const type = obj.type;
+        if (type !== "user" && type !== "assistant") continue;
+        const msg = obj.message;
+        if (!msg) continue;
+
+        let content = msg.content;
+        if (Array.isArray(content)) {
+          content = content
+            .filter((b: Record<string, unknown>) => b.type === "text")
+            .map((b: Record<string, unknown>) => b.text)
+            .join("");
+        }
+        if (typeof content === "string" && content.trim()) {
+          messages.push({ role: type, content: content.trim() });
+        }
+      } catch {
+        continue;
+      }
+    }
+    return messages;
+  }
+  return [];
+}
+
+/**
  * Run an engine for a web session and emit results via WebSocket.
  */
 import { buildContext } from "../sessions/context.js";
@@ -357,6 +447,11 @@ async function runWebSession(
   config: JimmyConfig,
   context: ApiContext,
 ): Promise<void> {
+  logger.info(`Web session ${session.id} running engine "${session.engine}" (model: ${session.model || "default"})`);
+
+  // Persist the user prompt
+  insertMessage(session.id, "user", prompt);
+
   updateSession(session.id, {
     status: "running",
     lastActivity: new Date().toISOString(),
@@ -385,10 +480,17 @@ async function runWebSession(
       onStream: (delta) => {
         context.emit("session:delta", {
           sessionId: session.id,
-          delta,
+          type: delta.type,
+          content: delta.content,
+          toolName: delta.toolName,
         });
       },
     });
+
+    // Persist the assistant response
+    if (result.result) {
+      insertMessage(session.id, "assistant", result.result);
+    }
 
     updateSession(session.id, {
       engineSessionId: result.sessionId,

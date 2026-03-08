@@ -1,3 +1,12 @@
+export type StreamDeltaType = "text" | "tool_use" | "tool_result" | "status" | "error";
+
+export interface StreamDelta {
+  type: StreamDeltaType;
+  content: string;
+  toolName?: string;
+  toolId?: string;
+}
+
 export interface Engine {
   name: string;
   run(opts: EngineRunOpts): Promise<EngineResult>;
@@ -11,6 +20,7 @@ export interface EngineRunOpts {
   bin?: string;
   model?: string;
   attachments?: string[];
+  onStream?: (delta: StreamDelta) => void;
 }
 
 export interface EngineResult {
@@ -26,7 +36,7 @@ export interface Connector {
   name: string;
   start(): Promise<void>;
   stop(): Promise<void>;
-  sendMessage(target: Target, text: string): Promise<void>;
+  sendMessage(target: Target, text: string): Promise<string | void>;
   addReaction(target: Target, emoji: string): Promise<void>;
   removeReaction(target: Target, emoji: string): Promise<void>;
   editMessage(target: Target, text: string): Promise<void>;
@@ -106,7 +116,7 @@ export interface Department {
 }
 
 export interface JimmyConfig {
-  gateway: { port: number; host: string };
+  gateway: { port: number; host: string; streaming?: boolean };
   engines: {
     default: "claude" | "codex";
     claude: { bin: string; model: string; effortLevel?: string };

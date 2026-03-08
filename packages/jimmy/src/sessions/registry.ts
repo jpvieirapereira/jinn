@@ -22,6 +22,19 @@ CREATE TABLE IF NOT EXISTS sessions (
   last_error TEXT
 )`;
 
+const CREATE_MESSAGES_TABLE = `
+CREATE TABLE IF NOT EXISTS messages (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  content TEXT NOT NULL,
+  timestamp INTEGER NOT NULL
+)`;
+
+const CREATE_MESSAGES_INDEX = `
+CREATE INDEX IF NOT EXISTS idx_messages_session ON messages (session_id, timestamp)
+`;
+
 function rowToSession(row: Record<string, unknown>): Session {
   return {
     id: row.id as string,
@@ -44,6 +57,8 @@ export function initDb(): Database.Database {
   db = new Database(SESSIONS_DB);
   db.pragma("journal_mode = WAL");
   db.exec(CREATE_TABLE);
+  db.exec(CREATE_MESSAGES_TABLE);
+  db.exec(CREATE_MESSAGES_INDEX);
   return db;
 }
 
@@ -160,6 +175,27 @@ export function listSessions(filter?: ListSessionsFilter): Session[] {
 
 export function deleteSession(id: string): boolean {
   const db = initDb();
+  db.prepare("DELETE FROM messages WHERE session_id = ?").run(id);
   const result = db.prepare("DELETE FROM sessions WHERE id = ?").run(id);
   return result.changes > 0;
+}
+
+export interface SessionMessage {
+  id: string;
+  role: string;
+  content: string;
+  timestamp: number;
+}
+
+export function insertMessage(sessionId: string, role: string, content: string): void {
+  const db = initDb();
+  const id = uuidv4();
+  db.prepare("INSERT INTO messages (id, session_id, role, content, timestamp) VALUES (?, ?, ?, ?, ?)").run(
+    id, sessionId, role, content, Date.now(),
+  );
+}
+
+export function getMessages(sessionId: string): SessionMessage[] {
+  const db = initDb();
+  return db.prepare("SELECT id, role, content, timestamp FROM messages WHERE session_id = ? ORDER BY timestamp ASC").all(sessionId) as SessionMessage[];
 }

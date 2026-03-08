@@ -22,6 +22,8 @@ export interface Message {
   timestamp: number
   media?: MediaAttachment[]
   isStreaming?: boolean
+  toolStatus?: string
+  toolCall?: string
 }
 
 export interface Conversation {
