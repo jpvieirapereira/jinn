@@ -1,3 +1,8 @@
+---
+name: cron-manager
+description: Create, edit, delete, enable, disable, and list scheduled cron jobs
+---
+
 # Cron Manager Skill
 
 ## Trigger

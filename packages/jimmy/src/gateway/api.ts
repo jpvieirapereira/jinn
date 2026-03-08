@@ -530,8 +530,10 @@ function loadTranscriptMessages(engineSessionId: string): Array<{ role: string; 
  * Run an engine for a web session and emit results via WebSocket.
  */
 import { buildContext } from "../sessions/context.js";
+import type { SyncedConversation } from "../sessions/context.js";
 import { JIMMY_HOME } from "../shared/paths.js";
 import type { Engine, Session } from "../shared/types.js";
+import { parseCommand } from "../commands/parser.js";
 
 async function runWebSession(
   session: Session,
@@ -560,6 +562,26 @@ async function runWebSession(
       employee = findEmployee(session.employee, registry);
     }
 
+    // Detect slash commands — enrich context and rewrite prompt to avoid engine CLI conflicts
+    let syncedConversation: SyncedConversation | undefined;
+    const parsed = parseCommand(prompt);
+    if (parsed) {
+      if (parsed.command === "sync" && parsed.target) {
+        const { findRecentEmployeeSession } = await import("../sessions/registry.js");
+        const recentSession = findRecentEmployeeSession(parsed.target, session.id);
+        if (recentSession) {
+          const syncMsgs = getMessages(recentSession.id);
+          if (syncMsgs.length > 0) {
+            syncedConversation = {
+              employee: parsed.target,
+              messages: syncMsgs.map((m) => ({ role: m.role, content: m.content })),
+            };
+            logger.info(`Synced ${syncMsgs.length} messages from ${parsed.target}'s session ${recentSession.id}`);
+          }
+        }
+      }
+    }
+
     const systemPrompt = buildContext({
       source: "web",
       channel: session.sourceRef,
@@ -568,6 +590,7 @@ async function runWebSession(
       connectors: Array.from(context.connectors.keys()),
       config,
       sessionId: session.id,
+      syncedConversation,
     });
 
     const engineConfig = session.engine === "codex"

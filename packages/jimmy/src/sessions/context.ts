@@ -10,6 +10,11 @@ const MAX_CONTEXT_CHARS = 32000;
  * This is what makes Jimmy "smart" — the engine sees all of this context
  * before responding to the user.
  */
+export interface SyncedConversation {
+  employee: string;
+  messages: Array<{ role: string; content: string }>;
+}
+
 export function buildContext(opts: {
   source: string;
   channel: string;
@@ -19,6 +24,7 @@ export function buildContext(opts: {
   connectors?: string[];
   config?: JimmyConfig;
   sessionId?: string;
+  syncedConversation?: SyncedConversation;
 }): string {
   const sections: string[] = [];
 
@@ -76,6 +82,11 @@ export function buildContext(opts: {
   // ── Delegation protocol ──────────────────────────────────
   if (!opts.employee) {
     sections.push(buildDelegationProtocol(opts.config));
+  }
+
+  // ── Synced conversation (from /sync command) ────────────
+  if (opts.syncedConversation) {
+    sections.push(buildSyncedConversation(opts.syncedConversation));
   }
 
   // ── Gateway API reference ─────────────────────────────────
@@ -398,6 +409,29 @@ function buildEvolutionContext(): string {
     lines.push(`- Update \`~/.jimmy/knowledge/projects.md\` with project details`);
     lines.push(`- If the user gives you persistent feedback (e.g. "always do X", "never do Y"), update \`~/.jimmy/CLAUDE.md\``);
     lines.push(`\nDo this silently — don't announce every file update. Just evolve.`);
+  }
+
+  return lines.join("\n");
+}
+
+function buildSyncedConversation(synced: SyncedConversation): string {
+  const MAX_CHARS = 4000;
+  const lines: string[] = [
+    `## Synced conversation with @${synced.employee}`,
+    `The user used \`/sync\` to pull in the latest conversation with this employee. Here is what was discussed:\n`,
+  ];
+
+  let chars = 0;
+  for (const msg of synced.messages) {
+    const prefix = msg.role === "user" ? "**User**" : `**${synced.employee}**`;
+    const content = msg.content.length > 500 ? msg.content.slice(0, 500) + "..." : msg.content;
+    const line = `${prefix}: ${content}`;
+    if (chars + line.length > MAX_CHARS) {
+      lines.push(`\n_(conversation truncated — ${synced.messages.length} total messages)_`);
+      break;
+    }
+    lines.push(line);
+    chars += line.length;
   }
 
   return lines.join("\n");

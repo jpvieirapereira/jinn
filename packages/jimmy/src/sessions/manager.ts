@@ -13,8 +13,12 @@ import {
   updateSession,
   deleteSession,
   insertMessage,
+  findRecentEmployeeSession,
+  getMessages,
 } from "./registry.js";
 import { buildContext } from "./context.js";
+import type { SyncedConversation } from "./context.js";
+import { parseCommand } from "../commands/parser.js";
 import { SessionQueue } from "./queue.js";
 import { JIMMY_HOME } from "../shared/paths.js";
 import { logger } from "../shared/logger.js";
@@ -115,6 +119,25 @@ export class SessionManager {
     });
 
     try {
+      // Detect slash commands — enrich context and rewrite prompt to avoid engine CLI conflicts
+      let syncedConversation: SyncedConversation | undefined;
+      const parsed = parseCommand(prompt);
+      if (parsed) {
+        if (parsed.command === "sync" && parsed.target) {
+          const recentSession = findRecentEmployeeSession(parsed.target, session.id);
+          if (recentSession) {
+            const syncMsgs = getMessages(recentSession.id);
+            if (syncMsgs.length > 0) {
+              syncedConversation = {
+                employee: parsed.target,
+                messages: syncMsgs.map((m) => ({ role: m.role, content: m.content })),
+              };
+              logger.info(`Synced ${syncMsgs.length} messages from ${parsed.target}'s session ${recentSession.id}`);
+            }
+          }
+        }
+      }
+
       const systemPrompt = buildContext({
         source: session.source,
         channel: target.channel,
@@ -124,6 +147,7 @@ export class SessionManager {
         connectors: this.connectorNames,
         config: this.config,
         sessionId: session.id,
+        syncedConversation,
       });
 
       const engineConfig = session.engine === "codex"

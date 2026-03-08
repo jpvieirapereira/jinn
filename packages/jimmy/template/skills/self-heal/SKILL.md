@@ -1,3 +1,8 @@
+---
+name: self-heal
+description: Diagnose and fix problems in Jimmy's configuration and runtime
+---
+
 # Self-Heal Skill
 
 ## Trigger

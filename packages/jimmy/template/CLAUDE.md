@@ -31,6 +31,8 @@ You should become more useful with every interaction.
 ## Skills
 Skills are markdown playbooks in `~/.jimmy/skills/<skill-name>/SKILL.md`. Read and follow them step by step.
 
+Every SKILL.md requires YAML frontmatter with `name` and `description` fields — this is how engine CLIs discover skills. The gateway auto-syncs symlinks in `.claude/skills/` and `.agents/skills/` so engines find them as project-local skills.
+
 ## The Org System
 You manage AI employees defined in `~/.jimmy/org/`. Each has a persona, rank, department, and engine.
 - Delegate tasks that fit an employee's role
@@ -45,6 +47,19 @@ You can edit any file in `~/.jimmy/`. The gateway watches for changes:
 - `config.yaml` changes → gateway reloads
 - `cron/jobs.json` changes → scheduler reloads
 - `org/` changes → employee registry rebuilds
+- `skills/` changes → symlinks in `.claude/skills/` and `.agents/skills/` re-synced
+
+## Slash Commands
+
+Users can type slash commands in chat. The gateway enriches your context automatically — you just respond naturally.
+
+| Command | Usage | What happens |
+|---------|-------|-------------|
+| `/sync` | `/sync @employee-name` | The gateway fetches the most recent conversation with that employee and injects it into your context. You can then see what was discussed and respond with full awareness. |
+| `/new` | `/new` | Starts a fresh chat session. |
+| `/status` | `/status` | Shows current session info. |
+
+Each command has a detailed skill playbook in `~/.jimmy/skills/<command>/SKILL.md`.
 
 ## Conventions
 - YAML for personas/config, JSON for boards/cron, Markdown for skills/docs

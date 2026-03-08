@@ -11,7 +11,7 @@ import { SessionManager } from "../sessions/manager.js";
 import { ClaudeEngine } from "../engines/claude.js";
 import { CodexEngine } from "../engines/codex.js";
 import { handleApiRequest, type ApiContext } from "./api.js";
-import { startWatchers, stopWatchers } from "./watcher.js";
+import { startWatchers, stopWatchers, syncSkillSymlinks } from "./watcher.js";
 import { SlackConnector } from "../connectors/slack/index.js";
 import { loadJobs } from "../cron/jobs.js";
 import { startScheduler, reloadScheduler, stopScheduler } from "../cron/scheduler.js";
@@ -241,6 +241,9 @@ export async function startGateway(
     }
   });
 
+
+  // Sync skill symlinks to .claude/skills/ and .agents/skills/
+  syncSkillSymlinks();
 
   // Start file watchers
   startWatchers({

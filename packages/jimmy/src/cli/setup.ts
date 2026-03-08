@@ -12,6 +12,8 @@ import {
   DOCS_DIR,
   SKILLS_DIR,
   ORG_DIR,
+  CLAUDE_SKILLS_DIR,
+  AGENTS_SKILLS_DIR,
 } from "../shared/paths.js";
 import { initDb } from "../sessions/registry.js";
 
@@ -247,6 +249,44 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   ensureDir(DOCS_DIR);
   ensureDir(SKILLS_DIR);
   ensureDir(ORG_DIR);
+
+  // Create .claude/skills/ and .agents/skills/ with symlinks to skills/
+  ensureDir(CLAUDE_SKILLS_DIR);
+  ensureDir(AGENTS_SKILLS_DIR);
+
+  if (fs.existsSync(SKILLS_DIR)) {
+    const skillDirs = fs.readdirSync(SKILLS_DIR, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name);
+    for (const name of skillDirs) {
+      const relTarget = path.join("..", "..", "skills", name);
+      for (const targetDir of [CLAUDE_SKILLS_DIR, AGENTS_SKILLS_DIR]) {
+        const linkPath = path.join(targetDir, name);
+        if (!fs.existsSync(linkPath)) {
+          try {
+            fs.symlinkSync(relTarget, linkPath);
+          } catch {
+            // ignore — may fail on some platforms
+          }
+        }
+      }
+    }
+  }
+
+  // Create .claude/settings.local.json for engine permissions
+  const settingsPath = path.join(JIMMY_HOME, ".claude", "settings.local.json");
+  if (ensureFile(settingsPath, JSON.stringify({
+    permissions: {
+      allow: [
+        "Bash(npm:*)", "Bash(pnpm:*)", "Bash(node:*)", "Bash(jimmy:*)",
+        "Bash(curl:*)", "Bash(cat:*)", "Bash(ls:*)", "Bash(mkdir:*)",
+        "Bash(cp:*)", "Bash(mv:*)", "Bash(rm:*)", "Bash(git:*)",
+        "Read", "Write", "Edit", "Glob", "Grep",
+      ],
+    },
+  }, null, 2) + "\n")) {
+    created.push(settingsPath);
+  }
 
   // 12. Print summary
   console.log("");

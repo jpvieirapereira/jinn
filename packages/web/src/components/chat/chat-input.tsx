@@ -14,6 +14,19 @@ interface Employee {
   engine?: string
 }
 
+interface SlashCommand {
+  name: string
+  description: string
+  /** Whether this command needs an @employee argument */
+  needsEmployee?: boolean
+}
+
+const SLASH_COMMANDS: SlashCommand[] = [
+  { name: 'sync', description: 'Pull in conversation from an employee', needsEmployee: true },
+  { name: 'new', description: 'Start a new chat session' },
+  { name: 'status', description: 'Show current session info' },
+]
+
 interface ChatInputProps {
   disabled: boolean
   onSend: (message: string, media?: MediaAttachment[]) => void
@@ -88,6 +101,9 @@ export function ChatInput({
   const [showMentions, setShowMentions] = useState(false)
   const [mentionFilter, setMentionFilter] = useState('')
   const [mentionIndex, setMentionIndex] = useState(0)
+  const [showCommands, setShowCommands] = useState(false)
+  const [commandFilter, setCommandFilter] = useState('')
+  const [commandIndex, setCommandIndex] = useState(0)
   const [pendingAttachments, setPendingAttachments] = useState<MediaAttachment[]>([])
   const [isRecording, setIsRecording] = useState(false)
   const [recordingElapsed, setRecordingElapsed] = useState(0)
@@ -140,10 +156,41 @@ export function ChatInput({
     [value]
   )
 
+  const handleCommandSelect = useCallback(
+    (cmd: SlashCommand) => {
+      if (cmd.needsEmployee) {
+        // Insert command + @ to trigger mention autocomplete
+        setValue('/' + cmd.name + ' @')
+        setShowCommands(false)
+        // Trigger mention dropdown
+        setMentionFilter('')
+        setMentionIndex(0)
+        setShowMentions(true)
+      } else {
+        setValue('/' + cmd.name)
+        setShowCommands(false)
+      }
+      textareaRef.current?.focus()
+    },
+    []
+  )
+
   function handleChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const val = e.target.value
     setValue(val)
 
+    // Detect slash commands: text starts with / and has no space yet (still typing the command name)
+    if (val.startsWith('/') && !val.includes(' ')) {
+      const filter = val.slice(1).toLowerCase()
+      setCommandFilter(filter)
+      setCommandIndex(0)
+      setShowCommands(true)
+      setShowMentions(false)
+      return
+    }
+    setShowCommands(false)
+
+    // Detect @mentions
     const atIdx = val.lastIndexOf('@')
     if (atIdx !== -1) {
       const afterAt = val.slice(atIdx + 1)
@@ -158,6 +205,32 @@ export function ChatInput({
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Command autocomplete navigation
+    if (showCommands && filteredCommands.length > 0) {
+      const max = filteredCommands.length
+      if (e.key === 'ArrowDown') {
+        e.preventDefault()
+        setCommandIndex((prev) => (prev + 1) % max)
+        return
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault()
+        setCommandIndex((prev) => (prev - 1 + max) % max)
+        return
+      }
+      if (e.key === 'Tab' || e.key === 'Enter') {
+        e.preventDefault()
+        handleCommandSelect(filteredCommands[commandIndex])
+        return
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setShowCommands(false)
+        return
+      }
+    }
+
+    // Mention autocomplete navigation
     if (showMentions && filteredEmployees.length > 0) {
       const max = Math.min(filteredEmployees.length, 8)
       if (e.key === 'ArrowDown') {
@@ -209,6 +282,7 @@ export function ChatInput({
     setValue('')
     setPendingAttachments([])
     setShowMentions(false)
+    setShowCommands(false)
 
     // Reset textarea height
     if (textareaRef.current) {
@@ -291,6 +365,10 @@ export function ChatInput({
     }
   }
 
+  const filteredCommands = SLASH_COMMANDS.filter((c) =>
+    c.name.toLowerCase().startsWith(commandFilter)
+  )
+
   const filteredEmployees = employees.filter((e) =>
     e.name.toLowerCase().includes(mentionFilter)
   )
@@ -306,6 +384,58 @@ export function ChatInput({
       flexShrink: 0,
       position: 'relative',
     }}>
+      {/* Slash command autocomplete */}
+      {showCommands && filteredCommands.length > 0 && (
+        <div style={{
+          position: 'absolute',
+          bottom: '100%',
+          left: 'var(--space-4)',
+          right: 'var(--space-4)',
+          marginBottom: 4,
+          background: 'var(--bg)',
+          border: '1px solid var(--separator)',
+          borderRadius: 'var(--radius-md)',
+          boxShadow: 'var(--shadow-lg)',
+          maxHeight: 160,
+          overflowY: 'auto',
+          zIndex: 10,
+        }}>
+          {filteredCommands.map((cmd, idx) => {
+            const isHighlighted = idx === commandIndex
+            return (
+              <button
+                key={cmd.name}
+                onClick={() => handleCommandSelect(cmd)}
+                style={{
+                  width: '100%',
+                  textAlign: 'left',
+                  padding: 'var(--space-2) var(--space-3)',
+                  fontSize: 'var(--text-footnote)',
+                  background: isHighlighted ? 'var(--fill-secondary)' : 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 'var(--space-2)',
+                  color: 'var(--text-primary)',
+                }}
+              >
+                <span style={{
+                  fontFamily: 'var(--font-mono)',
+                  fontWeight: 'var(--weight-semibold)',
+                  color: 'var(--accent)',
+                  fontSize: 'var(--text-footnote)',
+                }}>/{cmd.name}</span>
+                <span style={{
+                  color: 'var(--text-tertiary)',
+                  fontSize: 'var(--text-caption1)',
+                }}>{cmd.description}</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
       {/* Mention autocomplete */}
       {showMentions && filteredEmployees.length > 0 && (
         <div style={{
@@ -527,8 +657,7 @@ export function ChatInput({
         gap: 'var(--space-3)',
       }}>
         <span>Enter to send</span>
-        <span>/new - new chat</span>
-        <span>/status - info</span>
+        <span>/ - commands</span>
         <span>@name - mention</span>
       </div>
     </div>

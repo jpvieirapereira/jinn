@@ -1,3 +1,8 @@
+---
+name: onboarding
+description: Walk a new user through initial Jimmy setup and customization
+---
+
 # Onboarding Skill
 
 ## Trigger

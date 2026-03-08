@@ -1,3 +1,8 @@
+---
+name: skill-creator
+description: Create new custom skills by writing SKILL.md playbooks
+---
+
 # Skill Creator Skill
 
 ## Trigger
@@ -63,9 +68,14 @@ Include example inputs, outputs, file contents, and commands wherever possible. 
 
 ## Template
 
-Use this template as a starting point:
+Use this template as a starting point. **YAML frontmatter is required** — both Claude Code and Codex CLIs discover skills by reading frontmatter from `SKILL.md` files. Without it, the skill won't be recognized by engines.
 
 ```markdown
+---
+name: <skill-name>
+description: <One-line description of what this skill does>
+---
+
 # <Skill Name>
 
 ## Trigger
@@ -90,6 +100,10 @@ This skill activates when <specific trigger description>.
 
 - If <error condition>, then <fallback behavior>.
 ```
+
+## Auto-Sync
+
+The gateway automatically creates symlinks in `~/.jimmy/.claude/skills/` and `~/.jimmy/.agents/skills/` pointing to each skill directory. This happens on startup and whenever the `skills/` directory changes. You do not need to manage symlinks manually.
 
 ## Error Handling
 

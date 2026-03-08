@@ -16,4 +16,6 @@ export const DOCS_DIR = path.join(JIMMY_HOME, "docs");
 export const LOGS_DIR = path.join(JIMMY_HOME, "logs");
 export const TMP_DIR = path.join(JIMMY_HOME, "tmp");
 export const PID_FILE = path.join(JIMMY_HOME, "gateway.pid");
+export const CLAUDE_SKILLS_DIR = path.join(JIMMY_HOME, ".claude", "skills");
+export const AGENTS_SKILLS_DIR = path.join(JIMMY_HOME, ".agents", "skills");
 export const TEMPLATE_DIR = path.join(__dirname, "..", "..", "..", "template");

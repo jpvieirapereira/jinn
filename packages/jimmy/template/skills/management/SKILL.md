@@ -1,3 +1,8 @@
+---
+name: management
+description: Manage the AI organization — hire, fire, promote, delegate, and review boards
+---
+
 # Management Skill
 
 ## Trigger

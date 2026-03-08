@@ -244,3 +244,25 @@ export function getMessages(sessionId: string): SessionMessage[] {
   const db = initDb();
   return db.prepare("SELECT id, role, content, timestamp FROM messages WHERE session_id = ? ORDER BY timestamp ASC").all(sessionId) as SessionMessage[];
 }
+
+/**
+ * Find the most recent session for an employee, optionally excluding
+ * sessions that are children of a specific parent.
+ */
+export function findRecentEmployeeSession(
+  employeeName: string,
+  excludeParentId?: string,
+): Session | undefined {
+  const db = initDb();
+  let query = "SELECT * FROM sessions WHERE employee = ?";
+  const values: unknown[] = [employeeName];
+
+  if (excludeParentId) {
+    query += " AND (parent_session_id IS NULL OR parent_session_id != ?)";
+    values.push(excludeParentId);
+  }
+
+  query += " ORDER BY last_activity DESC LIMIT 1";
+  const row = db.prepare(query).get(...values) as Record<string, unknown> | undefined;
+  return row ? rowToSession(row) : undefined;
+}

@@ -31,6 +31,8 @@ This is your home. Every file here is yours to read, write, and manage.
 
 Skills are markdown playbooks stored in `~/.jimmy/skills/<skill-name>/SKILL.md`. They are not code -- they are instructions you follow step by step.
 
+Every SKILL.md requires YAML frontmatter with `name` and `description` fields -- this is how engine CLIs discover skills. The gateway auto-syncs symlinks in `.claude/skills/` and `.agents/skills/` so engines find them as project-local skills.
+
 **To use a skill:** Read the `SKILL.md` file and execute its instructions. Skills tell you what to do, what files to touch, and what output to produce.
 
 **Pre-packaged skills:**
@@ -122,6 +124,7 @@ You can edit any file in `~/.jimmy/`. The gateway watches for changes and reacts
 - **`config.yaml` changes** -- Gateway reloads its configuration
 - **`cron/jobs.json` changes** -- Cron scheduler reloads all jobs
 - **`org/` changes** -- Employee registry is rebuilt
+- **`skills/` changes** -- Symlinks in `.claude/skills/` and `.agents/skills/` re-synced
 
 This means you can reconfigure yourself, add new cron jobs, create employees, and install skills -- all by writing files. No restart needed.
 
@@ -140,6 +143,20 @@ Read `~/.jimmy/docs/` for deeper understanding of the gateway architecture, conn
 - **Markdown** for skills, docs, and instructions (`*.md`)
 - **kebab-case** for all file and directory names
 - When creating new files, follow existing patterns in the directory
+
+---
+
+## Slash Commands
+
+The gateway supports slash commands that enrich your context before you respond. You don't need to implement these — the gateway handles the data fetching. You just see the enriched context and respond naturally.
+
+| Command | Usage | Effect |
+|---------|-------|--------|
+| `/sync` | `/sync @employee-name` | Fetches the most recent conversation with that employee and injects it into your system prompt. You'll see it as a "Synced conversation" section. |
+| `/new` | `/new` | Resets the current session and starts fresh. |
+| `/status` | `/status` | Displays current session metadata. |
+
+Each command has a detailed skill playbook in `~/.jimmy/skills/<command>/SKILL.md`.
 
 ---
 
