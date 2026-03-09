@@ -1,3 +1,6 @@
+jinn:
+  version: "0.1.0"
+
 gateway:
   port: 7777
   host: "127.0.0.1"

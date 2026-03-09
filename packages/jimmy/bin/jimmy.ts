@@ -81,6 +81,71 @@ program
   });
 
 program
+  .command("migrate")
+  .description("Apply pending template migrations to update this instance")
+  .option("--check", "Only check for pending migrations, don't apply")
+  .option("--auto", "Apply safe changes automatically without launching AI")
+  .action(async (opts) => {
+    const { runMigrate } = await import("../src/cli/migrate.js");
+    await runMigrate(opts);
+  });
+
+// Skills subcommands (jinn skills find|add|remove|list|update|restore)
+{
+  const skillsCmd = program
+    .command("skills")
+    .description("Manage skills from the skills.sh registry");
+
+  skillsCmd
+    .command("find [query]")
+    .description("Search the skills.sh registry")
+    .action(async (query?: string) => {
+      const { skillsFind } = await import("../src/cli/skills.js");
+      skillsFind(query);
+    });
+
+  skillsCmd
+    .command("add <package>")
+    .description("Install a skill from skills.sh")
+    .action(async (pkg: string) => {
+      const { skillsAdd } = await import("../src/cli/skills.js");
+      skillsAdd(pkg);
+    });
+
+  skillsCmd
+    .command("remove <name>")
+    .description("Remove a skill from this instance")
+    .action(async (name: string) => {
+      const { skillsRemove } = await import("../src/cli/skills.js");
+      skillsRemove(name);
+    });
+
+  skillsCmd
+    .command("list")
+    .description("List installed skills")
+    .action(async () => {
+      const { skillsList } = await import("../src/cli/skills.js");
+      skillsList();
+    });
+
+  skillsCmd
+    .command("update")
+    .description("Re-install all skills to get latest versions")
+    .action(async () => {
+      const { skillsUpdate } = await import("../src/cli/skills.js");
+      skillsUpdate();
+    });
+
+  skillsCmd
+    .command("restore")
+    .description("Install all skills listed in skills.json")
+    .action(async () => {
+      const { skillsRestore } = await import("../src/cli/skills.js");
+      skillsRestore();
+    });
+}
+
+program
   .command("chrome-allow")
   .description("Pre-approve all sites for the Claude Chrome extension")
   .option("--no-restart", "Don't restart Chrome automatically")

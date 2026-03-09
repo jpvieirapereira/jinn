@@ -148,6 +148,7 @@ export interface PortalConfig {
 }
 
 export interface JinnConfig {
+  jinn?: { version?: string };
   gateway: { port: number; host: string; streaming?: boolean };
   engines: {
     default: "claude" | "codex";

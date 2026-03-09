@@ -1,6 +1,7 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
-import { execSync } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 import yaml from "js-yaml";
 import {
   JINN_HOME,
@@ -17,6 +18,7 @@ import {
   AGENTS_SKILLS_DIR,
 } from "../shared/paths.js";
 import { initDb } from "../sessions/registry.js";
+import { getPackageVersion } from "../shared/version.js";
 
 const GREEN = "\x1b[32m";
 const YELLOW = "\x1b[33m";
@@ -124,7 +126,109 @@ function copyTemplateDir(
   return created;
 }
 
-const DEFAULT_CONFIG = `gateway:
+/**
+ * Detect project context by scanning ~/Projects/ for common project indicators
+ * and suggest relevant skills the user might want to install.
+ */
+function detectProjectContext(portalSlug: string): void {
+  const projectsDir = path.join(os.homedir(), "Projects");
+  if (!fs.existsSync(projectsDir)) return;
+
+  const indicators: { check: (dir: string) => boolean; query: string; label: string }[] = [
+    {
+      check: (dir) => {
+        try {
+          return fs.readdirSync(dir).some((e) => e.endsWith(".xcodeproj"));
+        } catch { return false; }
+      },
+      query: "ios swift xcode",
+      label: "iOS",
+    },
+    {
+      check: (dir) => fs.existsSync(path.join(dir, "Package.swift")),
+      query: "ios swift xcode",
+      label: "iOS/Swift",
+    },
+    {
+      check: (dir) => fs.existsSync(path.join(dir, "Dockerfile")),
+      query: "docker container",
+      label: "Docker",
+    },
+    {
+      check: (dir) => fs.existsSync(path.join(dir, ".github", "workflows")),
+      query: "github actions ci",
+      label: "GitHub Actions",
+    },
+    {
+      check: (dir) => {
+        try {
+          return fs.readdirSync(dir).some((e) => e.startsWith("playwright.config"));
+        } catch { return false; }
+      },
+      query: "playwright testing",
+      label: "Playwright",
+    },
+    {
+      check: (dir) => {
+        const pkgPath = path.join(dir, "package.json");
+        if (!fs.existsSync(pkgPath)) return false;
+        try {
+          const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
+          const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+          return deps != null && ("react" in deps || "next" in deps);
+        } catch { return false; }
+      },
+      query: "react nextjs",
+      label: "React",
+    },
+  ];
+
+  const detected = new Map<string, string>(); // label → query
+
+  try {
+    const topLevel = fs.readdirSync(projectsDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory());
+
+    const projectDirs: string[] = [];
+    for (const dir of topLevel) {
+      const dirPath = path.join(projectsDir, dir.name);
+      projectDirs.push(dirPath);
+      // One level deeper for org-style folders (e.g. ~/Projects/Personal/foo)
+      try {
+        const subDirs = fs.readdirSync(dirPath, { withFileTypes: true })
+          .filter((e) => e.isDirectory());
+        for (const sub of subDirs) {
+          projectDirs.push(path.join(dirPath, sub.name));
+        }
+      } catch {
+        // ignore permission errors
+      }
+    }
+
+    for (const projDir of projectDirs) {
+      for (const ind of indicators) {
+        if (detected.has(ind.label)) continue;
+        if (ind.check(projDir)) {
+          detected.set(ind.label, ind.query);
+        }
+      }
+    }
+  } catch {
+    return;
+  }
+
+  if (detected.size > 0) {
+    console.log("");
+    for (const [label, query] of detected) {
+      console.log(`  💡 Detected ${label} projects. Run ${DIM}${portalSlug} skills find ${query}${RESET} to discover relevant skills.`);
+    }
+  }
+}
+
+const DEFAULT_CONFIG = `jinn:
+  version: "${getPackageVersion()}"
+
+gateway:
   port: 7777
   host: "127.0.0.1"
 engines:
@@ -219,9 +323,11 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   const templateAgents = path.join(TEMPLATE_DIR, "AGENTS.md");
 
   if (!fs.existsSync(CONFIG_PATH)) {
-    const source = fs.existsSync(templateConfig)
+    let source = fs.existsSync(templateConfig)
       ? fs.readFileSync(templateConfig, "utf-8")
       : DEFAULT_CONFIG;
+    // Stamp the current package version into the config
+    source = source.replace(/version:\s*"[^"]*"/, `version: "${getPackageVersion()}"`);
     ensureFile(CONFIG_PATH, source);
     created.push(CONFIG_PATH);
   }
@@ -293,6 +399,14 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   created.push(...copyTemplateDir(path.join(TEMPLATE_DIR, "skills"), SKILLS_DIR, templateReplacements));
   created.push(...copyTemplateDir(path.join(TEMPLATE_DIR, "org"), ORG_DIR, templateReplacements));
 
+  // Copy skills.json manifest
+  const templateSkillsJson = path.join(TEMPLATE_DIR, "skills.json");
+  const destSkillsJson = path.join(JINN_HOME, "skills.json");
+  if (fs.existsSync(templateSkillsJson) && !fs.existsSync(destSkillsJson)) {
+    fs.copyFileSync(templateSkillsJson, destSkillsJson);
+    created.push(destSkillsJson);
+  }
+
   // Ensure dirs exist even if template had nothing to copy
   ensureDir(DOCS_DIR);
   ensureDir(SKILLS_DIR);
@@ -335,6 +449,12 @@ export async function runSetup(opts?: { force?: boolean }): Promise<void> {
   }, null, 2) + "\n")) {
     created.push(settingsPath);
   }
+
+  // Pre-cache skills CLI for instant searches later
+  spawn('npx', ['skills', '--version'], { stdio: 'ignore', detached: true }).unref();
+
+  // Detect project context and suggest relevant skills
+  detectProjectContext(portalSlug);
 
   // 12. Print summary
   console.log("");
