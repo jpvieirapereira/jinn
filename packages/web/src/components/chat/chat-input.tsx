@@ -31,7 +31,7 @@ interface ChatInputProps {
   disabled: boolean
   loading: boolean
   onSend: (message: string, media?: MediaAttachment[], interrupt?: boolean) => void
-  onInterrupt: () => void
+  onInterrupt?: () => void
   onNewSession: () => void
   onStatusRequest: () => void
 }
@@ -626,7 +626,7 @@ export function ChatInput({
         />
 
         {/* Stop button — shown when loading */}
-        {loading && (
+        {loading && onInterrupt && (
           <button
             onClick={onInterrupt}
             aria-label="Stop"

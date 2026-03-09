@@ -37,11 +37,11 @@ interface Config {
   engines?: {
     default?: string
     claude?: { bin?: string; model?: string; effortLevel?: string }
-    codex?: { bin?: string; model?: string }
+    codex?: { bin?: string; model?: string; effortLevel?: string }
   }
   connectors?: {
     slack?: { appToken?: string; botToken?: string }
-    web?: { bidirectional?: boolean; idleTimeoutMinutes?: number; hardTimeoutHours?: number }
+    web?: Record<string, never>
   }
   logging?: {
     level?: string
@@ -847,12 +847,16 @@ export default function SettingsPage() {
                   />
                 </FieldRow>
                 <FieldRow label="Model">
-                  <SettingsInput
-                    value={config.engines?.claude?.model ?? ""}
+                  <SettingsSelect
+                    value={config.engines?.claude?.model ?? "opus"}
                     onChange={(v) =>
                       updateConfig(["engines", "claude", "model"], v)
                     }
-                    placeholder="claude-sonnet-4-20250514"
+                    options={[
+                      { value: "opus", label: "Opus (claude-opus-4-6)" },
+                      { value: "sonnet", label: "Sonnet (claude-sonnet-4-6)" },
+                      { value: "haiku", label: "Haiku (claude-haiku-4-5)" },
+                    ]}
                   />
                 </FieldRow>
                 <FieldRow label="Effort Level">
@@ -898,12 +902,34 @@ export default function SettingsPage() {
                   />
                 </FieldRow>
                 <FieldRow label="Model">
-                  <SettingsInput
-                    value={config.engines?.codex?.model ?? ""}
+                  <SettingsSelect
+                    value={config.engines?.codex?.model ?? "gpt-5.4"}
                     onChange={(v) =>
                       updateConfig(["engines", "codex", "model"], v)
                     }
-                    placeholder="codex-mini-latest"
+                    options={[
+                      { value: "gpt-5.4", label: "GPT-5.4" },
+                      { value: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
+                      { value: "gpt-5.2-codex", label: "GPT-5.2 Codex" },
+                      { value: "gpt-5.2", label: "GPT-5.2" },
+                      { value: "gpt-5.1-codex-max", label: "GPT-5.1 Codex Max" },
+                      { value: "gpt-5.1-codex-mini", label: "GPT-5.1 Codex Mini" },
+                    ]}
+                  />
+                </FieldRow>
+                <FieldRow label="Effort Level">
+                  <SettingsSelect
+                    value={config.engines?.codex?.effortLevel ?? "default"}
+                    onChange={(v) =>
+                      updateConfig(["engines", "codex", "effortLevel"], v)
+                    }
+                    options={[
+                      { value: "default", label: "Default" },
+                      { value: "low", label: "Low" },
+                      { value: "medium", label: "Medium" },
+                      { value: "high", label: "High" },
+                      { value: "xhigh", label: "Extra High" },
+                    ]}
                   />
                 </FieldRow>
               </Section>
@@ -959,38 +985,14 @@ export default function SettingsPage() {
                 >
                   Web UI
                 </div>
-                <FieldRow label="Bidirectional Mode">
-                  <ToggleSwitch
-                    checked={config.connectors?.web?.bidirectional !== false}
-                    onChange={(v) =>
-                      updateConfig(["connectors", "web", "bidirectional"], v)
-                    }
-                  />
-                </FieldRow>
-                {config.connectors?.web?.bidirectional !== false && (
-                  <>
-                    <FieldRow label="Idle Timeout (min)">
-                      <SettingsInput
-                        type="number"
-                        value={String(config.connectors?.web?.idleTimeoutMinutes ?? 60)}
-                        onChange={(v) =>
-                          updateConfig(["connectors", "web", "idleTimeoutMinutes"], Number(v) || 0)
-                        }
-                        placeholder="60"
-                      />
-                    </FieldRow>
-                    <FieldRow label="Hard Timeout (hrs)">
-                      <SettingsInput
-                        type="number"
-                        value={String(config.connectors?.web?.hardTimeoutHours ?? 24)}
-                        onChange={(v) =>
-                          updateConfig(["connectors", "web", "hardTimeoutHours"], Number(v) || 0)
-                        }
-                        placeholder="24"
-                      />
-                    </FieldRow>
-                  </>
-                )}
+                <div
+                  style={{
+                    fontSize: "var(--text-caption2)",
+                    color: "var(--text-tertiary)",
+                  }}
+                >
+                  Web conversations use queued one-shot resume flow for both engines.
+                </div>
               </Section>
 
               {/* ── Section 6: Cron ── */}

@@ -1,10 +1,3 @@
-import type { Engine } from "../shared/types.js";
-import { isBidirectionalEngine } from "../shared/types.js";
-import { logger } from "../shared/logger.js";
-
-export type QueuedStatus = "queued" | "steered" | "interrupted";
-export const RESTARTING_TURN_REASON = "Interrupted: restarting turn";
-
 export class SessionQueue {
   private queues = new Map<string, Promise<void>>();
   /** Track which sessions are currently running */
@@ -47,33 +40,5 @@ export class SessionQueue {
       }
     });
     return next;
-  }
-
-  /**
-   * Determine what to do with a mid-turn message:
-   * - "steered" if the engine supports bidirectional and the session is alive
-   * - "interrupted" if interrupt flag is set
-   * - "queued" if one-shot mode (will process after current turn)
-   */
-  handleMidTurn(
-    sessionKey: string,
-    engine: Engine,
-    sessionId: string,
-    message: string,
-    interrupt: boolean,
-  ): QueuedStatus {
-    if (interrupt && isBidirectionalEngine(engine)) {
-      engine.kill(sessionId, RESTARTING_TURN_REASON);
-      logger.info(`Interrupted session ${sessionId}`);
-      return "interrupted";
-    }
-
-    if (isBidirectionalEngine(engine) && engine.canSteer(sessionId) && engine.isAlive(sessionId)) {
-      engine.steer(sessionId, message);
-      return "steered";
-    }
-
-    // One-shot mode — message will be queued
-    return "queued";
   }
 }

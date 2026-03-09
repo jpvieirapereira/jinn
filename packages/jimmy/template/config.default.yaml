@@ -11,6 +11,7 @@ engines:
   codex:
     bin: codex
     model: gpt-5.4
+    effortLevel: high
 
 connectors: {}
 

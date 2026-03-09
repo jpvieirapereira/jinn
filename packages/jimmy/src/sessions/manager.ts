@@ -7,7 +7,6 @@ import type {
   Employee,
   Target,
 } from "../shared/types.js";
-import { isBidirectionalEngine } from "../shared/types.js";
 import {
   createSession,
   getSessionBySourceRef,
@@ -81,17 +80,8 @@ export class SessionManager {
       .map((a) => a.localPath)
       .filter((p): p is string => !!p);
 
-    // If session is running and engine supports steering, steer mid-turn
+    // If a turn is already running, queue the next one and serialize by source.
     if (session.status === "running" && this.queue.isRunning(sourceRef)) {
-      const engine = this.engines.get(session.engine);
-      if (engine && isBidirectionalEngine(engine) && engine.canSteer(session.id) && engine.isAlive(session.id)) {
-        insertMessage(session.id, "user", msg.text);
-        engine.steer(session.id, msg.text);
-        await connector.addReaction(target, "zap").catch(() => {});
-        logger.info(`Steered session ${session.id} mid-turn via connector`);
-        return;
-      }
-      // One-shot mode — add clock reaction, queue will serialize
       await connector.addReaction(target, "clock1").catch(() => {});
     }
 
@@ -159,8 +149,10 @@ export class SessionManager {
         cwd: JIMMY_HOME,
         bin: engineConfig.bin,
         model: session.model ?? engineConfig.model,
+        effortLevel: (engineConfig as { effortLevel?: string }).effortLevel,
         cliFlags: employee?.cliFlags,
         attachments: attachments.length > 0 ? attachments : undefined,
+        sessionId: session.id,
       });
 
       // Edit the thinking message with the actual response, or send new if edit fails

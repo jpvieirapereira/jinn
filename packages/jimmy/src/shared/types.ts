@@ -12,23 +12,17 @@ export interface Engine {
   run(opts: EngineRunOpts): Promise<EngineResult>;
 }
 
-/**
- * Engines that support bidirectional streaming implement this interface.
- * The gateway checks for this at runtime to decide steering vs queueing.
- */
-export interface BidirectionalEngine extends Engine {
-  /** Whether this engine can accept mid-turn input for the live session */
-  canSteer(sessionId: string): boolean;
-  /** Send a follow-up message to a running bidirectional session */
-  steer(sessionId: string, message: string): void;
-  /** Kill a running engine process (for interrupt) */
+export interface InterruptibleEngine extends Engine {
+  /** Kill a running engine process for a specific Jimmy session. */
   kill(sessionId: string, reason?: string): void;
-  /** Check if a bidirectional process is alive for this session */
+  /** Check if a live engine process is still running for this session. */
   isAlive(sessionId: string): boolean;
+  /** Kill all live engine processes during gateway shutdown. */
+  killAll(): void;
 }
 
-export function isBidirectionalEngine(engine: Engine): engine is BidirectionalEngine {
-  return "canSteer" in engine && "steer" in engine && "kill" in engine && "isAlive" in engine;
+export function isInterruptibleEngine(engine: Engine): engine is InterruptibleEngine {
+  return "kill" in engine && "isAlive" in engine && "killAll" in engine;
 }
 
 export interface EngineRunOpts {
@@ -38,13 +32,12 @@ export interface EngineRunOpts {
   cwd: string;
   bin?: string;
   model?: string;
+  effortLevel?: string;
   attachments?: string[];
   /** Extra CLI flags to pass to the engine binary (e.g. ["--chrome"]) */
   cliFlags?: string[];
   onStream?: (delta: StreamDelta) => void;
-  /** Use bidirectional stdin/stdout streaming (keeps process alive across turns) */
-  interactive?: boolean;
-  /** Unique session ID for tracking bidirectional processes */
+  /** Unique Jimmy session ID for tracking the spawned process. */
   sessionId?: string;
 }
 
@@ -146,12 +139,7 @@ export interface Department {
   description: string;
 }
 
-export interface WebConnectorConfig {
-  bidirectional?: boolean;
-  idleTimeoutMinutes?: number;
-  hardTimeoutHours?: number;
-  turnStallMinutes?: number;
-}
+export interface WebConnectorConfig {}
 
 export interface PortalConfig {
   portalName?: string;
@@ -164,7 +152,7 @@ export interface JimmyConfig {
   engines: {
     default: "claude" | "codex";
     claude: { bin: string; model: string; effortLevel?: string };
-    codex: { bin: string; model: string };
+    codex: { bin: string; model: string; effortLevel?: string };
   };
   connectors: Record<string, any> & { web?: WebConnectorConfig };
   logging: { file: boolean; stdout: boolean; level: string };

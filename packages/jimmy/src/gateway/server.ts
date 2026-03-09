@@ -113,18 +113,6 @@ export async function startGateway(
   engines.set("claude", claudeEngine);
   engines.set("codex", codexEngine);
 
-  // Configure bidirectional timeouts from config
-  const applyBidirectionalTimeouts = (cfg: JimmyConfig) => {
-    const timeouts = {
-      idleTimeoutMinutes: cfg.connectors?.web?.idleTimeoutMinutes ?? 60,
-      hardTimeoutHours: cfg.connectors?.web?.hardTimeoutHours ?? 24,
-      turnStallMinutes: cfg.connectors?.web?.turnStallMinutes ?? 10,
-    };
-    claudeEngine.setTimeouts(timeouts);
-    codexEngine.setTimeouts(timeouts);
-  };
-  applyBidirectionalTimeouts(config);
-
   // Derive connector names from config
   const connectorNames: string[] = [];
   if (config.connectors?.slack?.appToken && config.connectors?.slack?.botToken) {
@@ -274,7 +262,6 @@ export async function startGateway(
       try {
         currentConfig = loadConfig();
         apiContext.config = currentConfig;
-        applyBidirectionalTimeouts(currentConfig);
         logger.info("Config reloaded successfully");
         emit("config:reloaded", {});
       } catch (err) {
@@ -314,10 +301,6 @@ export async function startGateway(
     // Terminate live engine subprocesses before tearing down the gateway.
     claudeEngine.killAll();
     codexEngine.killAll();
-
-    // Stop bidirectional sweep loops
-    claudeEngine.stopSweep();
-    codexEngine.stopSweep();
 
     // Stop cron scheduler
     stopScheduler();

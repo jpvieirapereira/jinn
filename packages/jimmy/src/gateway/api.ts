@@ -3,9 +3,9 @@ import fs from "node:fs";
 import path from "node:path";
 import yaml from "js-yaml";
 import type { Engine, JimmyConfig, Session } from "../shared/types.js";
+import { isInterruptibleEngine } from "../shared/types.js";
 import type { SessionManager } from "../sessions/manager.js";
 import { buildContext } from "../sessions/context.js";
-import { RESTARTING_TURN_REASON } from "../sessions/queue.js";
 import {
   listSessions,
   getSession,
@@ -179,14 +179,11 @@ export async function handleApiRequest(
       const session = getSession(params.id);
       if (!session) return notFound(res);
 
-      // Kill any live bidirectional process for this session
+      // Kill any live engine process for this session before deleting it.
       const engine = context.sessionManager.getEngine(session.engine);
-      if (engine) {
-        const { isBidirectionalEngine } = await import("../shared/types.js");
-        if (isBidirectionalEngine(engine) && engine.isAlive(params.id)) {
-          logger.info(`Killing bidirectional process for deleted session ${params.id}`);
-          engine.kill(params.id);
-        }
+      if (engine && isInterruptibleEngine(engine) && engine.isAlive(params.id)) {
+        logger.info(`Killing live engine process for deleted session ${params.id}`);
+        engine.kill(params.id);
       }
 
       const deleted = deleteSession(params.id);
@@ -253,7 +250,6 @@ export async function handleApiRequest(
       const body = JSON.parse(await readBody(req));
       const prompt = body.message || body.prompt;
       if (!prompt) return badRequest(res, "message is required");
-      const interrupt = !!body.interrupt;
 
       const config = context.getConfig();
       const engine = context.sessionManager.getEngine(session.engine);
@@ -262,30 +258,8 @@ export async function handleApiRequest(
       // Persist the user message immediately
       insertMessage(session.id, "user", prompt);
 
-      // If session is currently running, handle mid-turn
+      // If a turn is already running, this follow-up will be queued and resume later.
       if (session.status === "running") {
-        const queue = context.sessionManager.getQueue();
-        const midTurnResult = queue.handleMidTurn(
-          session.sourceRef,
-          engine,
-          session.id,
-          prompt,
-          interrupt,
-        );
-
-        if (midTurnResult === "steered") {
-          context.emit("session:steered", { sessionId: session.id, message: prompt });
-          return json(res, { status: "steered", sessionId: session.id });
-        }
-
-        if (midTurnResult === "interrupted") {
-          // Kill happened — start a new turn with --resume after a brief delay
-          context.emit("session:interrupted", { sessionId: session.id });
-          dispatchWebSessionRun(session, prompt, engine, config, context, { delayMs: 500 });
-          return json(res, { status: "interrupted", sessionId: session.id });
-        }
-
-        // midTurnResult === "queued" — schedule a real queued follow-up turn
         context.emit("session:queued", { sessionId: session.id, message: prompt });
       }
 
@@ -671,7 +645,11 @@ async function runWebSession(
   config: JimmyConfig,
   context: ApiContext,
 ): Promise<void> {
-  const currentSession = getSession(session.id) ?? session;
+  const currentSession = getSession(session.id);
+  if (!currentSession) {
+    logger.info(`Skipping deleted web session ${session.id} before run start`);
+    return;
+  }
   logger.info(`Web session ${currentSession.id} running engine "${currentSession.engine}" (model: ${currentSession.model || "default"})`);
 
   // Ensure status is "running" (may already be set by the POST handler)
@@ -722,7 +700,6 @@ async function runWebSession(
       bin: engineConfig.bin,
       model: currentSession.model ?? engineConfig.model,
       cliFlags: employee?.cliFlags,
-      interactive: currentSession.engine === "claude" && (config.connectors?.web?.bidirectional !== false),
       sessionId: currentSession.id,
       onStream: (delta) => {
         const now = Date.now();
@@ -748,8 +725,8 @@ async function runWebSession(
       clearInterval(runHeartbeat);
     });
 
-    if (result.error === RESTARTING_TURN_REASON) {
-      logger.info(`Web session ${currentSession.id} interrupted for immediate restart`);
+    if (!getSession(currentSession.id)) {
+      logger.info(`Skipping completion for deleted web session ${currentSession.id}`);
       return;
     }
 
@@ -782,6 +759,10 @@ async function runWebSession(
     );
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
+    if (!getSession(currentSession.id)) {
+      logger.info(`Skipping error handling for deleted web session ${currentSession.id}: ${errMsg}`);
+      return;
+    }
     updateSession(currentSession.id, {
       status: "error",
       lastActivity: new Date().toISOString(),

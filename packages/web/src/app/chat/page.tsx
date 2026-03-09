@@ -423,18 +423,6 @@ function ChatPage() {
     [selectedId]
   )
 
-  const handleInterrupt = useCallback(() => {
-    if (!selectedId || !loading) return
-    // Send an interrupt with no new message — just stops the current turn
-    api.sendMessage(selectedId, { message: '(interrupted by user)', interrupt: true }).catch(() => {})
-    // Clear streaming state
-    streamingTextRef.current = ''
-    setStreamingText('')
-    setLoading(false)
-    intermediateStartRef.current = -1
-    clearIntermediateMessages(selectedId)
-  }, [selectedId, loading])
-
   const handleDeleteSession = useCallback(async (id: string) => {
     try {
       await api.deleteSession(id)
@@ -738,7 +726,6 @@ function ChatPage() {
             disabled={false}
             loading={loading}
             onSend={handleSend}
-            onInterrupt={handleInterrupt}
             onNewSession={handleNewChat}
             onStatusRequest={handleStatusRequest}
           />
