@@ -25,5 +25,8 @@
   "devDependencies": {
     "turbo": "^2.4.0",
     "typescript": "^5.8.0"
+  },
+  "dependencies": {
+    "classic-level": "^2.0.0"
   }
 }

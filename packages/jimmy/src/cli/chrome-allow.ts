@@ -111,7 +111,12 @@ function isBrowserRunning(browser: BrowserConfig): boolean {
   try {
     const platform = os.platform();
     if (platform === "darwin") {
-      execSync(`pgrep -x '${browser.processName}'`, { stdio: "ignore" });
+      // Use AppleScript to check if the app is running — pgrep can match lingering helper processes
+      const result = execSync(
+        `osascript -e 'tell application "System Events" to (name of processes) contains "${browser.macAppName}"'`,
+        { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
+      ).trim();
+      return result === "true";
     } else if (platform === "linux") {
       execSync(`pgrep -x '${browser.processName.toLowerCase()}'`, { stdio: "ignore" });
     } else if (platform === "win32") {
