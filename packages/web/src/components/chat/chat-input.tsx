@@ -3,6 +3,9 @@ import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { api } from '@/lib/api'
 import type { MediaAttachment } from '@/lib/conversations'
 import { MediaPreview } from './media-preview'
+import { useStt } from '@/hooks/use-stt'
+import { SttDownloadModal } from './stt-download-modal'
+import { SttWaveform } from './stt-waveform'
 
 interface Employee {
   name: string
@@ -34,6 +37,8 @@ interface ChatInputProps {
   onStatusRequest: () => void
   /** Incremented when skills change on the gateway, triggers re-fetch */
   skillsVersion?: number
+  /** WebSocket events from useGateway — needed for STT download progress */
+  events?: Array<{ event: string; payload: unknown }>
 }
 
 /* ── File to MediaAttachment ─────────────────────────────── */
@@ -100,6 +105,7 @@ export function ChatInput({
   onNewSession,
   onStatusRequest,
   skillsVersion,
+  events,
 }: ChatInputProps) {
   const [value, setValue] = useState('')
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -111,12 +117,11 @@ export function ChatInput({
   const [commandFilter, setCommandFilter] = useState('')
   const [commandIndex, setCommandIndex] = useState(0)
   const [pendingAttachments, setPendingAttachments] = useState<MediaAttachment[]>([])
-  const [isListening, setIsListening] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const mentionItemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
-  const recognitionRef = useRef<SpeechRecognition | null>(null)
-  const transcriptRef = useRef<string>('')
+
+  const stt = useStt(events)
 
   // Load employees for @mention (with full details)
   useEffect(() => {
@@ -340,80 +345,31 @@ export function ChatInput({
     }
   }
 
-  /* ── Speech-to-text (Web Speech API) ──────────────────── */
+  /* ── Speech-to-text (offline whisper.cpp) ─────────────── */
 
-  const hasSpeechSupport = typeof window !== 'undefined' &&
-    ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
-
-  const fillTranscript = useCallback((text: string) => {
+  const fillTextarea = useCallback((text: string) => {
     if (!text) return
     setValue((prev) => prev ? prev + ' ' + text : text)
-    setTimeout(() => {
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto'
-        textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px'
-      }
-    }, 0)
   }, [])
 
-  function toggleSpeechRecognition() {
-    if (isListening && recognitionRef.current) {
-      recognitionRef.current.stop()
-      return
+  // Auto-resize textarea when value changes programmatically (e.g., from STT)
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px'
     }
+  }, [value])
 
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SpeechRecognition) return
-
-    transcriptRef.current = ''
-    const recognition = new SpeechRecognition()
-    recognition.lang = 'en-US'
-    recognition.continuous = false
-    recognition.interimResults = true
-
-    recognition.onresult = (event: SpeechRecognitionEvent) => {
-      let finalTranscript = ''
-      let interimTranscript = ''
-      for (let i = 0; i < event.results.length; i++) {
-        const result = event.results[i]
-        if (result.isFinal) {
-          finalTranscript += result[0].transcript
-        } else {
-          interimTranscript += result[0].transcript
-        }
-      }
-      // Store best transcript so far (prefer final, fall back to interim)
-      transcriptRef.current = finalTranscript || interimTranscript
-      // If we got a final result, fill immediately
-      if (finalTranscript) {
-        fillTranscript(finalTranscript)
-        transcriptRef.current = '' // consumed
-      }
+  async function handleMicClick() {
+    if (stt.state === 'recording') {
+      const text = await stt.stopRecording()
+      fillTextarea(text ?? '')
+      textareaRef.current?.focus()
+    } else if (stt.state === 'transcribing') {
+      // Do nothing while transcribing
+    } else {
+      stt.handleMicClick()
     }
-
-    recognition.onend = () => {
-      // Fill any remaining transcript that wasn't finalized
-      if (transcriptRef.current) {
-        fillTranscript(transcriptRef.current)
-        transcriptRef.current = ''
-      }
-      setIsListening(false)
-      recognitionRef.current = null
-    }
-
-    recognition.onerror = () => {
-      // Still try to use whatever we captured
-      if (transcriptRef.current) {
-        fillTranscript(transcriptRef.current)
-        transcriptRef.current = ''
-      }
-      setIsListening(false)
-      recognitionRef.current = null
-    }
-
-    recognitionRef.current = recognition
-    recognition.start()
-    setIsListening(true)
   }
 
   const filteredCommands = slashCommands.filter((c) =>
@@ -643,34 +599,52 @@ export function ChatInput({
           }}
         />
 
-        {/* Voice input button (Web Speech API) */}
-        {hasSpeechSupport && (
-          <button
-            aria-label={isListening ? 'Stop listening' : 'Voice input'}
-            onClick={toggleSpeechRecognition}
-            style={{
-              width: 32,
-              height: 32,
-              flexShrink: 0,
-              borderRadius: 'var(--radius-sm)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: isListening ? 'var(--system-red)' : 'transparent',
-              border: 'none',
-              cursor: 'pointer',
-              color: isListening ? '#fff' : 'var(--text-secondary)',
-              transition: 'all 150ms ease',
-            }}
-            title={isListening ? 'Stop listening' : 'Voice input'}
-          >
+        {/* Voice input / STT button */}
+        <button
+          aria-label={
+            stt.state === 'recording' ? 'Stop recording'
+            : stt.state === 'transcribing' ? 'Transcribing…'
+            : 'Voice input'
+          }
+          onClick={handleMicClick}
+          disabled={stt.state === 'transcribing'}
+          style={{
+            width: 32,
+            height: 32,
+            flexShrink: 0,
+            borderRadius: stt.state === 'recording' ? '999px' : 'var(--radius-sm)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: stt.state === 'recording' ? 'var(--system-red)' : 'transparent',
+            border: 'none',
+            cursor: stt.state === 'transcribing' ? 'wait' : 'pointer',
+            color: stt.state === 'recording' ? '#fff' : 'var(--text-secondary)',
+            transition: 'all 150ms ease',
+          }}
+          title={
+            stt.state === 'recording' ? 'Stop recording'
+            : stt.state === 'transcribing' ? 'Transcribing…'
+            : 'Voice input'
+          }
+        >
+          {stt.state === 'transcribing' ? (
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ animation: 'stt-spin 1s linear infinite' }}>
+              <path d="M12 2a10 10 0 0 1 10 10" />
+            </svg>
+          ) : (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
               <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
               <line x1="12" y1="19" x2="12" y2="23" />
               <line x1="8" y1="23" x2="16" y2="23" />
             </svg>
-          </button>
+          )}
+        </button>
+
+        {/* Live waveform during recording */}
+        {stt.state === 'recording' && stt.analyser && (
+          <SttWaveform analyser={stt.analyser} width={64} height={28} />
         )}
 
         {/* Stop button — shown when loading */}
@@ -739,6 +713,21 @@ export function ChatInput({
         <span>/ - commands</span>
         <span>@name - mention</span>
       </div>
+
+      {/* STT model download modal */}
+      <SttDownloadModal
+        open={stt.state === 'no-model'}
+        progress={stt.downloadProgress}
+        onDownload={stt.startDownload}
+        onCancel={stt.dismissDownload}
+      />
+
+      <style>{`
+        @keyframes stt-spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
     </div>
   )
 }

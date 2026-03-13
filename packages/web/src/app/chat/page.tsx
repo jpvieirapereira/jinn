@@ -721,6 +721,7 @@ function ChatPage() {
             onNewSession={handleNewChat}
             onStatusRequest={handleStatusRequest}
             skillsVersion={skillsVersion}
+            events={events}
           />
         </div>
       </div>

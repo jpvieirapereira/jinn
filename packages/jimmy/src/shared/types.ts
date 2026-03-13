@@ -257,4 +257,9 @@ export interface JinnConfig {
     alertConnector?: string;
   };
   portal?: PortalConfig;
+  stt?: {
+    enabled?: boolean;
+    model?: string;
+    language?: string;
+  };
 }

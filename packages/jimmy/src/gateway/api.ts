@@ -24,8 +24,10 @@ import {
   ORG_DIR,
   SKILLS_DIR,
   LOGS_DIR,
+  TMP_DIR,
 } from "../shared/paths.js";
 import { logger } from "../shared/logger.js";
+import { getSttStatus, downloadModel, transcribe as sttTranscribe } from "../stt/stt.js";
 import { JINN_HOME } from "../shared/paths.js";
 import { resolveEffort } from "../shared/effort.js";
 import { loadJobs, saveJobs } from "../cron/jobs.js";
@@ -85,6 +87,15 @@ function readBody(req: HttpRequest): Promise<string> {
     const chunks: Buffer[] = [];
     req.on("data", (chunk: Buffer) => chunks.push(chunk));
     req.on("end", () => resolve(Buffer.concat(chunks).toString()));
+    req.on("error", reject);
+  });
+}
+
+function readBodyRaw(req: HttpRequest): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (chunk: Buffer) => chunks.push(chunk));
+    req.on("end", () => resolve(Buffer.concat(chunks)));
     req.on("error", reject);
   });
 }
@@ -818,6 +829,72 @@ export async function handleApiRequest(
 
       context.emit("config:updated", { portal: updated.portal });
       return json(res, { status: "ok", portal: updated.portal });
+    }
+
+    // ── STT (Speech-to-Text) ──────────────────────────────────
+    if (method === "GET" && pathname === "/api/stt/status") {
+      const config = context.getConfig();
+      const status = getSttStatus(config.stt?.model);
+      return json(res, status);
+    }
+
+    if (method === "POST" && pathname === "/api/stt/download") {
+      const config = context.getConfig();
+      const model = config.stt?.model || "small";
+
+      downloadModel(model, (progress) => {
+        context.emit("stt:download:progress", { progress });
+      }).then(() => {
+        // Update config to mark STT as enabled
+        try {
+          const raw = fs.readFileSync(CONFIG_PATH, "utf-8");
+          const cfg = yaml.load(raw) as Record<string, unknown>;
+          if (!cfg.stt || typeof cfg.stt !== "object") cfg.stt = {};
+          (cfg.stt as Record<string, unknown>).enabled = true;
+          (cfg.stt as Record<string, unknown>).model = model;
+          fs.writeFileSync(CONFIG_PATH, yaml.dump(cfg, { lineWidth: -1 }));
+        } catch (err) {
+          logger.error(`Failed to update config after STT download: ${err}`);
+        }
+        context.emit("stt:download:complete", { model });
+      }).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error(`STT download failed: ${msg}`);
+        context.emit("stt:download:error", { error: msg });
+      });
+
+      return json(res, { status: "downloading", model });
+    }
+
+    if (method === "POST" && pathname === "/api/stt/transcribe") {
+      const config = context.getConfig();
+      const model = config.stt?.model || "small";
+      const language = config.stt?.language || "en";
+
+      const audioBuffer = await readBodyRaw(req);
+      if (audioBuffer.length === 0) return badRequest(res, "No audio data");
+      if (audioBuffer.length > 10 * 1024 * 1024) return badRequest(res, "Audio too large (10MB max)");
+
+      const contentType = req.headers["content-type"] || "audio/webm";
+      const ext = contentType.includes("wav") ? ".wav"
+        : contentType.includes("mp4") || contentType.includes("m4a") ? ".m4a"
+        : contentType.includes("ogg") ? ".ogg"
+        : ".webm";
+
+      const tmpFile = path.join(TMP_DIR, `stt-${crypto.randomUUID()}${ext}`);
+      fs.mkdirSync(TMP_DIR, { recursive: true });
+      fs.writeFileSync(tmpFile, audioBuffer);
+
+      try {
+        const text = await sttTranscribe(tmpFile, model, language);
+        return json(res, { text });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        logger.error(`STT transcription failed: ${msg}`);
+        return serverError(res, `Transcription failed: ${msg}`);
+      } finally {
+        try { fs.unlinkSync(tmpFile); } catch {}
+      }
     }
 
     return notFound(res);

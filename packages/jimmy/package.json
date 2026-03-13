@@ -28,6 +28,7 @@
     "commander": "^13.1.0",
     "js-yaml": "^4.1.0",
     "node-cron": "^3.0.0",
+    "nodejs-whisper": "^0.2.9",
     "uuid": "^11.1.0",
     "ws": "^8.18.0"
   },

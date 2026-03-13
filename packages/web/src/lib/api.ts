@@ -90,4 +90,17 @@ export const api = {
     get<Array<{ event: string; payload: unknown; ts: number }>>("/api/activity"),
   updateDepartmentBoard: (name: string, data: unknown) =>
     put<Record<string, unknown>>(`/api/org/departments/${name}/board`, data),
+  sttStatus: () =>
+    get<{ available: boolean; model: string | null; downloading: boolean; progress: number }>("/api/stt/status"),
+  sttDownload: () =>
+    post<{ status: string; model: string }>("/api/stt/download", {}),
+  sttTranscribe: async (audioBlob: Blob): Promise<{ text: string }> => {
+    const res = await fetch(`${BASE}/api/stt/transcribe`, {
+      method: "POST",
+      headers: { "Content-Type": audioBlob.type || "audio/webm" },
+      body: audioBlob,
+    });
+    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    return res.json();
+  },
 };
