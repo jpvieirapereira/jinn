@@ -135,6 +135,7 @@ export interface Session {
   title: string | null;
   parentSessionId: string | null;
   status: "idle" | "running" | "error";
+  effortLevel: string | null;
   totalCost: number;
   totalTurns: number;
   queueDepth?: number;
@@ -178,6 +179,8 @@ export interface Employee {
   mcp?: boolean | string[];
   /** Max cost in USD for a single session. Overrides global config. */
   maxCostUsd?: number;
+  /** Default effort level for sessions assigned to this employee */
+  effortLevel?: string;
 }
 
 export interface Department {
@@ -235,8 +238,8 @@ export interface JinnConfig {
   gateway: { port: number; host: string; streaming?: boolean };
   engines: {
     default: "claude" | "codex";
-    claude: { bin: string; model: string; effortLevel?: string };
-    codex: { bin: string; model: string; effortLevel?: string };
+    claude: { bin: string; model: string; effortLevel?: string; childEffortOverride?: string };
+    codex: { bin: string; model: string; effortLevel?: string; childEffortOverride?: string };
   };
   connectors: Record<string, any> & {
     web?: WebConnectorConfig;

@@ -76,6 +76,7 @@ function rowToSession(row: Record<string, unknown>): Session {
     model: (row.model as string) ?? null,
     title: (row.title as string) ?? null,
     parentSessionId: (row.parent_session_id as string) ?? null,
+    effortLevel: (row.effort_level as string) ?? null,
     status: row.status as Session['status'],
     totalCost: (row.total_cost as number) ?? 0,
     totalTurns: (row.total_turns as number) ?? 0,
@@ -112,6 +113,7 @@ export function migrateSessionsSchema(database: Database.Database): void {
     ['transport_meta', 'TEXT'],
     ['total_cost', 'REAL', '0'],
     ['total_turns', 'INTEGER', '0'],
+    ['effort_level', 'TEXT'],
   ];
 
   for (const [name, type, defaultVal] of missingColumns) {
@@ -144,6 +146,7 @@ export interface CreateSessionOpts {
   model?: string;
   title?: string;
   parentSessionId?: string;
+  effortLevel?: string;
 }
 
 function getNextSessionNumber(): number {
@@ -174,9 +177,9 @@ export function createSession(opts: CreateSessionOpts & { prompt?: string; porta
   const stmt = db.prepare(`
     INSERT INTO sessions (
       id, engine, source, source_ref, connector, session_key, reply_context, message_id, transport_meta,
-      employee, model, title, parent_session_id, status, created_at, last_activity
+      employee, model, title, parent_session_id, effort_level, status, created_at, last_activity
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'idle', ?, ?)
   `);
   stmt.run(
     id,
@@ -192,6 +195,7 @@ export function createSession(opts: CreateSessionOpts & { prompt?: string; porta
     opts.model ?? null,
     title,
     opts.parentSessionId ?? null,
+    opts.effortLevel ?? null,
     now,
     now,
   );
@@ -211,6 +215,7 @@ export function createSession(opts: CreateSessionOpts & { prompt?: string; porta
     model: opts.model ?? null,
     title,
     parentSessionId: opts.parentSessionId ?? null,
+    effortLevel: opts.effortLevel ?? null,
     status: 'idle',
     totalCost: 0,
     totalTurns: 0,

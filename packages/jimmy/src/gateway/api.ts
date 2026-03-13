@@ -27,6 +27,7 @@ import {
 } from "../shared/paths.js";
 import { logger } from "../shared/logger.js";
 import { JINN_HOME } from "../shared/paths.js";
+import { resolveEffort } from "../shared/effort.js";
 import { loadJobs, saveJobs } from "../cron/jobs.js";
 import { reloadScheduler } from "../cron/scheduler.js";
 import { runCronJob } from "../cron/runner.js";
@@ -285,6 +286,7 @@ export async function handleApiRequest(
         replyContext: { source: "web" },
         employee: body.employee,
         parentSessionId: body.parentSessionId,
+        effortLevel: body.effortLevel,
         prompt,
         portalName: config.portal?.portalName,
       });
@@ -967,6 +969,8 @@ async function runWebSession(
     const engineConfig = currentSession.engine === "codex"
       ? config.engines.codex
       : config.engines.claude;
+    const effortLevel = resolveEffort(engineConfig, currentSession, employee);
+
     let lastHeartbeatAt = 0;
     const runHeartbeat = setInterval(() => {
       updateSession(currentSession.id, {
@@ -982,6 +986,7 @@ async function runWebSession(
       cwd: JINN_HOME,
       bin: engineConfig.bin,
       model: currentSession.model ?? engineConfig.model,
+      effortLevel,
       cliFlags: employee?.cliFlags,
       sessionId: currentSession.id,
       onStream: (delta) => {

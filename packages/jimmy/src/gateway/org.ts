@@ -36,6 +36,7 @@ export function scanOrg(): Map<string, Employee> {
               persona: data.persona,
               emoji: typeof data.emoji === "string" ? data.emoji : undefined,
               cliFlags: Array.isArray(data.cliFlags) ? data.cliFlags : undefined,
+              effortLevel: typeof data.effortLevel === "string" ? data.effortLevel : undefined,
             };
             registry.set(employee.name, employee);
           }

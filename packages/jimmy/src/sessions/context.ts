@@ -84,7 +84,7 @@ export function buildContext(opts: {
 
   // ── Delegation protocol ──────────────────────────────────
   if (!opts.employee) {
-    sections.push(buildDelegationProtocol(gatewayUrl, portalName));
+    sections.push(buildDelegationProtocol(gatewayUrl, portalName, opts.config));
   }
 
   // ── Gateway API reference ─────────────────────────────────
@@ -400,7 +400,15 @@ function trimContext(sections: string[]): string {
   return result;
 }
 
-function buildDelegationProtocol(gatewayUrl: string, _portalName: string): string {
+function buildDelegationProtocol(gatewayUrl: string, _portalName: string, config?: JinnConfig): string {
+  const defaultEngine = config?.engines.default || "claude";
+  const engineConfig = defaultEngine === "codex" ? config?.engines.codex : config?.engines.claude;
+  const childOverride = engineConfig?.childEffortOverride;
+
+  const effortOverrideNote = childOverride
+    ? `\n\n> **Note**: \`childEffortOverride\` is currently set to \`"${childOverride}"\` in config. All child sessions will use this effort level regardless of your per-task choice.`
+    : "";
+
   return `## Employee Delegation Protocol
 
 You are the COO. You NEVER become an employee — you orchestrate them. When the user mentions employees with \`@employee-name\` in their message, or when a task clearly fits an employee's role, you delegate by creating **linked child sessions**.
@@ -549,6 +557,23 @@ Managers need delegation instructions in their persona. When promoting an employ
 - They can spawn child sessions via the gateway API (include the API patterns)
 - They should apply oversight levels to their reports' work
 - They report summaries back to you (the COO)
+
+### Effort Level Management
+
+When delegating tasks, assess complexity and set \`effortLevel\` in the API request body:
+
+| Effort | Use for | Examples |
+|--------|---------|----------|
+| \`low\` | Simple lookups, status checks, information retrieval | "What's on the board?", "Check the latest run" |
+| \`medium\` | Standard tasks, content creation, routine analysis | "Write a blog post", "Analyze last week's metrics" |
+| \`high\` | Code changes, architecture, complex research, multi-step | "Refactor the auth module", "Design a new feature" |
+
+Include in your delegation API call:
+\`\`\`json
+{"prompt": "...", "employee": "...", "parentSessionId": "...", "effortLevel": "high"}
+\`\`\`
+
+If unsure, default to \`medium\`. Use your judgment — these are guidelines, not rigid rules. A trivial rename is \`low\` even though it's "code changes."${effortOverrideNote}
 
 ### Your session ID
 

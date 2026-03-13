@@ -19,6 +19,7 @@ import { buildContext } from "./context.js";
 import { SessionQueue } from "./queue.js";
 import { JINN_HOME } from "../shared/paths.js";
 import { logger } from "../shared/logger.js";
+import { resolveEffort } from "../shared/effort.js";
 import { loadJobs } from "../cron/jobs.js";
 import { setCronJobEnabled, triggerCronJob } from "../cron/scheduler.js";
 import { resolveMcpServers, writeMcpConfigFile, cleanupMcpConfigFile } from "../mcp/resolver.js";
@@ -176,6 +177,8 @@ export class SessionManager {
         }
       }
 
+      const effortLevel = resolveEffort(engineConfig, session, employee);
+
       const result = await engine.run({
         prompt: msg.text,
         resumeSessionId: session.engineSessionId ?? undefined,
@@ -183,7 +186,7 @@ export class SessionManager {
         cwd: JINN_HOME,
         bin: engineConfig.bin,
         model: session.model ?? engineConfig.model,
-        effortLevel: engineConfig.effortLevel,
+        effortLevel,
         cliFlags: employee?.cliFlags,
         mcpConfigPath,
         attachments: attachments.length > 0 ? attachments : undefined,
