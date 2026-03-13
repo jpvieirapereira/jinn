@@ -116,6 +116,7 @@ export function ChatInput({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const mentionItemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
   const recognitionRef = useRef<SpeechRecognition | null>(null)
+  const transcriptRef = useRef<string>('')
 
   // Load employees for @mention (with full details)
   useEffect(() => {
@@ -344,6 +345,17 @@ export function ChatInput({
   const hasSpeechSupport = typeof window !== 'undefined' &&
     ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)
 
+  const fillTranscript = useCallback((text: string) => {
+    if (!text) return
+    setValue((prev) => prev ? prev + ' ' + text : text)
+    setTimeout(() => {
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto'
+        textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px'
+      }
+    }, 0)
+  }, [])
+
   function toggleSpeechRecognition() {
     if (isListening && recognitionRef.current) {
       recognitionRef.current.stop()
@@ -353,31 +365,48 @@ export function ChatInput({
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) return
 
+    transcriptRef.current = ''
     const recognition = new SpeechRecognition()
     recognition.lang = 'en-US'
     recognition.continuous = false
-    recognition.interimResults = false
+    recognition.interimResults = true
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
-      const transcript = event.results[0]?.[0]?.transcript
-      if (transcript) {
-        setValue((prev) => prev ? prev + ' ' + transcript : transcript)
-        // Auto-resize textarea after filling
-        setTimeout(() => {
-          if (textareaRef.current) {
-            textareaRef.current.style.height = 'auto'
-            textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 120) + 'px'
-          }
-        }, 0)
+      let finalTranscript = ''
+      let interimTranscript = ''
+      for (let i = 0; i < event.results.length; i++) {
+        const result = event.results[i]
+        if (result.isFinal) {
+          finalTranscript += result[0].transcript
+        } else {
+          interimTranscript += result[0].transcript
+        }
+      }
+      // Store best transcript so far (prefer final, fall back to interim)
+      transcriptRef.current = finalTranscript || interimTranscript
+      // If we got a final result, fill immediately
+      if (finalTranscript) {
+        fillTranscript(finalTranscript)
+        transcriptRef.current = '' // consumed
       }
     }
 
     recognition.onend = () => {
+      // Fill any remaining transcript that wasn't finalized
+      if (transcriptRef.current) {
+        fillTranscript(transcriptRef.current)
+        transcriptRef.current = ''
+      }
       setIsListening(false)
       recognitionRef.current = null
     }
 
     recognition.onerror = () => {
+      // Still try to use whatever we captured
+      if (transcriptRef.current) {
+        fillTranscript(transcriptRef.current)
+        transcriptRef.current = ''
+      }
       setIsListening(false)
       recognitionRef.current = null
     }
