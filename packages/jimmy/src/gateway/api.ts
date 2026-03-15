@@ -33,6 +33,7 @@ import { resolveEffort } from "../shared/effort.js";
 import { loadJobs, saveJobs } from "../cron/jobs.js";
 import { reloadScheduler } from "../cron/scheduler.js";
 import { runCronJob } from "../cron/runner.js";
+import { handleFilesRequest, ensureFilesDir } from "./files.js";
 
 export interface ApiContext {
   config: JinnConfig;
@@ -930,6 +931,12 @@ export async function handleApiRequest(
         const msg = err instanceof Error ? err.message : String(err);
         return serverError(res, `Failed to update STT config: ${msg}`);
       }
+    }
+
+    // /api/files — file upload/download/management
+    if (pathname.startsWith("/api/files")) {
+      const handled = await handleFilesRequest(req, res, pathname, method, context);
+      if (handled) return;
     }
 
     return notFound(res);

@@ -13,6 +13,7 @@ import { SessionManager } from "../sessions/manager.js";
 import { ClaudeEngine } from "../engines/claude.js";
 import { CodexEngine } from "../engines/codex.js";
 import { handleApiRequest, type ApiContext } from "./api.js";
+import { ensureFilesDir } from "./files.js";
 import { initStt } from "../stt/stt.js";
 import { startWatchers, stopWatchers, syncSkillSymlinks } from "./watcher.js";
 import { SlackConnector } from "../connectors/slack/index.js";
@@ -104,6 +105,7 @@ export async function startGateway(
 
   // Initialize database and recover any sessions stuck from a previous run
   initDb();
+  ensureFilesDir();
   const recovered = recoverStaleSessions();
   if (recovered > 0) {
     logger.info(`Recovered ${recovered} stale session(s) stuck in "running" state`);
