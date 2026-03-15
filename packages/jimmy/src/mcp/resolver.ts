@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import type { McpGlobalConfig, McpServerConfig, Employee } from "../shared/types.js";
+import type { McpGlobalConfig, McpServerConfig, McpServerUrlConfig, Employee } from "../shared/types.js";
 import { JINN_HOME } from "../shared/paths.js";
 import { logger } from "../shared/logger.js";
 
@@ -123,13 +123,21 @@ function buildAvailableServers(config: McpGlobalConfig): Record<string, McpServe
     for (const [name, serverConfig] of Object.entries(config.custom)) {
       if (serverConfig.enabled === false) continue;
       const { enabled, ...rest } = serverConfig;
-      // Resolve env vars in the custom config
-      if (rest.env) {
+
+      // URL-based MCP server (HTTP/SSE transport)
+      // Claude Code requires "type": "sse" for URL-based servers
+      if ("url" in rest && (rest as McpServerUrlConfig).url) {
+        servers[name] = { type: "sse", ...rest } as McpServerConfig;
+        continue;
+      }
+
+      // Stdio-based MCP server — resolve env vars
+      if ("env" in rest && rest.env) {
         for (const [key, value] of Object.entries(rest.env)) {
           rest.env[key] = resolveEnvVar(value) || value;
         }
       }
-      servers[name] = rest;
+      servers[name] = rest as McpServerConfig;
     }
   }
 
