@@ -7,6 +7,27 @@ interface LiveProcess {
   terminationReason: string | null;
 }
 
+/** Errors that are likely transient and worth retrying */
+const TRANSIENT_PATTERNS = [
+  /ECONNRESET/i,
+  /ETIMEDOUT/i,
+  /socket hang up/i,
+  /503/,
+  /529/,
+  /overloaded/i,
+  /rate limit/i,
+  /spawn.*EAGAIN/i,
+];
+
+function isTransientError(stderr: string, code: number | null): boolean {
+  // Exit code 1 with no meaningful stderr is often a transient crash
+  if (code === 1 && stderr.trim().length < 10) return true;
+  return TRANSIENT_PATTERNS.some((pat) => pat.test(stderr));
+}
+
+const MAX_RETRIES = 2;
+const RETRY_BASE_MS = 1000;
+
 export class ClaudeEngine implements InterruptibleEngine {
   name = "claude" as const;
   private liveProcesses = new Map<string, LiveProcess>();
@@ -37,6 +58,42 @@ export class ClaudeEngine implements InterruptibleEngine {
   }
 
   async run(opts: EngineRunOpts): Promise<EngineResult> {
+    let lastResult: EngineResult | undefined;
+
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      if (attempt > 0) {
+        const delayMs = RETRY_BASE_MS * Math.pow(2, attempt - 1);
+        logger.warn(
+          `Claude engine retry ${attempt}/${MAX_RETRIES} for session ${opts.sessionId || "unknown"} after ${delayMs}ms`,
+        );
+        // Emit a status delta so the UI knows we're retrying
+        opts.onStream?.({ type: "status", content: `Retrying (attempt ${attempt + 1}/${MAX_RETRIES + 1})...` });
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+      }
+
+      const result = await this.runOnce(opts);
+      lastResult = result;
+
+      // Success or non-transient error — return immediately
+      if (!result.error) return result;
+
+      // If the process was intentionally killed, don't retry
+      if (result.error.startsWith("Interrupted")) return result;
+
+      // Check if this is a transient failure worth retrying
+      if (attempt < MAX_RETRIES && isTransientError(result.error, null)) {
+        logger.warn(`Transient Claude failure (attempt ${attempt + 1}): ${result.error.slice(0, 200)}`);
+        continue;
+      }
+
+      // Non-transient or final attempt — return the error
+      return result;
+    }
+
+    return lastResult!;
+  }
+
+  private async runOnce(opts: EngineRunOpts): Promise<EngineResult> {
     const streaming = !!opts.onStream;
     const args = ["-p", "--output-format", streaming ? "stream-json" : "json", "--verbose", "--dangerously-skip-permissions", "--chrome"];
 
@@ -191,8 +248,17 @@ export class ClaudeEngine implements InterruptibleEngine {
           return;
         }
 
-        const errMsg = `Claude exited with code ${code}: ${stderr.slice(0, 500)}`;
+        // Non-zero exit code — log full stderr for debugging
+        if (stderr.trim()) {
+          logger.error(`Claude stderr (exit code ${code}):\n${stderr}`);
+        }
+
+        const errMsg = `Claude exited with code ${code}${stderr.trim() ? `: ${stderr.slice(0, 500)}` : " (no stderr output)"}`;
         logger.error(errMsg);
+
+        // Emit error delta so WebSocket clients see the failure immediately
+        opts.onStream?.({ type: "error", content: errMsg });
+
         resolve({
           sessionId: opts.resumeSessionId || "",
           result: "",
@@ -206,7 +272,10 @@ export class ClaudeEngine implements InterruptibleEngine {
         if (opts.sessionId) {
           this.liveProcesses.delete(opts.sessionId);
         }
-        reject(new Error(`Failed to spawn Claude CLI: ${err.message}`));
+        const errMsg = `Failed to spawn Claude CLI: ${err.message}`;
+        logger.error(errMsg);
+        opts.onStream?.({ type: "error", content: errMsg });
+        reject(new Error(errMsg));
       });
     });
   }

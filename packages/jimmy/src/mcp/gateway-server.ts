@@ -53,7 +53,7 @@ const TOOLS = [
     inputSchema: {
       type: "object" as const,
       properties: {
-        status: { type: "string", enum: ["idle", "running", "error"], description: "Filter by status" },
+        status: { type: "string", enum: ["idle", "running", "error", "interrupted"], description: "Filter by status" },
       },
     },
   },

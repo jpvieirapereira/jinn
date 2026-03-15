@@ -339,16 +339,29 @@ export function listSessions(filter?: ListSessionsFilter): Session[] {
 }
 
 /**
- * Mark any sessions stuck in "running" status as "error".
+ * Mark any sessions stuck in "running" status as "interrupted".
  * Called on gateway startup — if the gateway is starting, no sessions can actually be running.
+ * Sessions with an engine_session_id can be resumed via the Claude --resume flag.
  */
 export function recoverStaleSessions(): number {
   const db = initDb();
   const now = new Date().toISOString();
   const result = db.prepare(
-    "UPDATE sessions SET status = 'error', last_activity = ?, last_error = 'Interrupted: gateway restarted while session was running' WHERE status = 'running'",
+    "UPDATE sessions SET status = 'interrupted', last_activity = ?, last_error = 'Interrupted: gateway restarted while session was running' WHERE status = 'running'",
   ).run(now);
   return result.changes;
+}
+
+/**
+ * Get sessions that were interrupted by a gateway restart and can be resumed.
+ * A session is resumable if it has an engine_session_id (Claude's internal session ID).
+ */
+export function getInterruptedSessions(): Session[] {
+  const db = initDb();
+  const rows = db.prepare(
+    "SELECT * FROM sessions WHERE status = 'interrupted' AND engine_session_id IS NOT NULL ORDER BY last_activity DESC",
+  ).all() as Record<string, unknown>[];
+  return rows.map(rowToSession);
 }
 
 /**

@@ -186,6 +186,13 @@ export async function handleApiRequest(
       return json(res, sessions.map((session) => serializeSession(session, context)));
     }
 
+    // GET /api/sessions/interrupted — list sessions that can be resumed after a restart
+    if (method === "GET" && pathname === "/api/sessions/interrupted") {
+      const { getInterruptedSessions } = await import("../sessions/registry.js");
+      const interrupted = getInterruptedSessions();
+      return json(res, interrupted.map((session) => serializeSession(session, context)));
+    }
+
     // GET /api/sessions/:id
     let params = matchRoute("/api/sessions/:id", pathname);
     if (method === "GET" && params) {
@@ -348,6 +355,17 @@ export async function handleApiRequest(
       // If a turn is already running, this follow-up will be queued and resume later.
       if (session.status === "running") {
         context.emit("session:queued", { sessionId: session.id, message: prompt });
+      }
+
+      // If session was interrupted by a restart, clear the error and resume
+      if (session.status === "interrupted") {
+        logger.info(`Resuming interrupted session ${session.id} (engineSessionId: ${session.engineSessionId})`);
+        updateSession(session.id, {
+          status: "running",
+          lastActivity: new Date().toISOString(),
+          lastError: null,
+        });
+        context.emit("session:resumed", { sessionId: session.id });
       }
 
       dispatchWebSessionRun(session, prompt, engine, config, context);

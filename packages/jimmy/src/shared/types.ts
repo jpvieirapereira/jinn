@@ -134,12 +134,12 @@ export interface Session {
   model: string | null;
   title: string | null;
   parentSessionId: string | null;
-  status: "idle" | "running" | "error";
+  status: "idle" | "running" | "error" | "interrupted";
   effortLevel: string | null;
   totalCost: number;
   totalTurns: number;
   queueDepth?: number;
-  transportState?: "idle" | "queued" | "running" | "error";
+  transportState?: "idle" | "queued" | "running" | "error" | "interrupted";
   createdAt: string;
   lastActivity: string;
   lastError: string | null;

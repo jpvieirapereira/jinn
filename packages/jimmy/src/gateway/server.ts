@@ -8,7 +8,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import type { JinnConfig, Connector, Employee } from "../shared/types.js";
 import { loadConfig } from "../shared/config.js";
 import { configureLogger, logger } from "../shared/logger.js";
-import { initDb, recoverStaleSessions } from "../sessions/registry.js";
+import { initDb, recoverStaleSessions, getInterruptedSessions, listSessions, updateSession } from "../sessions/registry.js";
 import { SessionManager } from "../sessions/manager.js";
 import { ClaudeEngine } from "../engines/claude.js";
 import { CodexEngine } from "../engines/codex.js";
@@ -108,7 +108,16 @@ export async function startGateway(
   ensureFilesDir();
   const recovered = recoverStaleSessions();
   if (recovered > 0) {
-    logger.info(`Recovered ${recovered} stale session(s) stuck in "running" state`);
+    logger.info(`Recovered ${recovered} stale session(s) — marked as "interrupted" for resume`);
+  }
+
+  // Log resumable sessions so operators know what can be picked up
+  const resumable = getInterruptedSessions();
+  if (resumable.length > 0) {
+    logger.info(`${resumable.length} interrupted session(s) available for resume:`);
+    for (const s of resumable) {
+      logger.info(`  - ${s.id} (engine: ${s.engine}, employee: ${s.employee || "none"}, engineSessionId: ${s.engineSessionId})`);
+    }
   }
 
   // Set up engines
@@ -332,6 +341,23 @@ export async function startGateway(
     });
   });
 
+  // Notify connected WebSocket clients about interrupted sessions available for resume
+  if (resumable.length > 0) {
+    // Small delay to let WebSocket clients connect after server starts
+    setTimeout(() => {
+      emit("sessions:interrupted", {
+        count: resumable.length,
+        sessions: resumable.map((s) => ({
+          id: s.id,
+          engine: s.engine,
+          employee: s.employee,
+          title: s.title,
+          lastActivity: s.lastActivity,
+        })),
+      });
+    }, 1000);
+  }
+
   // Prevent macOS from sleeping while the gateway is running
   let caffeinate: ChildProcess | null = null;
   if (process.platform === "darwin") {
@@ -360,7 +386,19 @@ export async function startGateway(
     // Stop session limit enforcement
     clearInterval(limitsInterval);
 
-    // Terminate live engine subprocesses before tearing down the gateway.
+    // Mark all running sessions as "interrupted" before killing engine processes.
+    // This preserves their engine_session_id so they can be resumed on next startup.
+    const runningSessions = listSessions({ status: "running" });
+    for (const session of runningSessions) {
+      updateSession(session.id, {
+        status: "interrupted",
+        lastActivity: new Date().toISOString(),
+        lastError: "Interrupted: gateway shutting down gracefully",
+      });
+      logger.info(`Marked session ${session.id} as interrupted for resume`);
+    }
+
+    // Terminate live engine subprocesses after marking sessions.
     claudeEngine.killAll();
     codexEngine.killAll();
 
