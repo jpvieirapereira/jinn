@@ -170,6 +170,7 @@ export function LiveStreamWidget() {
   const [error, setError] = useState<string | null>(null)
 
   const scrollRef = useRef<HTMLDivElement>(null)
+  const logIndexRef = useRef(0)
 
   const { events } = useGateway()
 
@@ -213,7 +214,7 @@ export function LiveStreamWidget() {
     if (latest.event === "log" && typeof latest.payload === "object" && latest.payload !== null) {
       const p = latest.payload as Record<string, unknown>
       const line = (p.line as string) || (p.message as string) || JSON.stringify(latest.payload)
-      const newEntry = parseLogLine(line, Date.now())
+      const newEntry = parseLogLine(line, logIndexRef.current++)
       setEntries((prev) => [...prev, newEntry].slice(-MAX_LINES))
     }
   }, [events, state])
