@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 
 interface Task {
@@ -18,10 +18,10 @@ interface BoardData {
   [key: string]: unknown;
 }
 
-const priorityColors: Record<string, string> = {
-  high: "bg-red-50 text-red-700 border-red-200",
-  medium: "bg-amber-50 text-amber-700 border-amber-200",
-  low: "bg-neutral-50 text-neutral-500 border-neutral-200",
+const priorityStyles: Record<string, React.CSSProperties> = {
+  high: { background: 'color-mix(in srgb, var(--system-red) 12%, transparent)', color: 'var(--system-red)', borderColor: 'color-mix(in srgb, var(--system-red) 25%, transparent)' },
+  medium: { background: 'color-mix(in srgb, var(--system-orange) 12%, transparent)', color: 'var(--system-orange)', borderColor: 'color-mix(in srgb, var(--system-orange) 25%, transparent)' },
+  low: { background: 'var(--fill-tertiary)', color: 'var(--text-tertiary)', borderColor: 'var(--separator)' },
 };
 
 const columnLabels: Record<string, string> = {
@@ -32,19 +32,21 @@ const columnLabels: Record<string, string> = {
 };
 
 function TaskCard({ task }: { task: Task }) {
-  const priorityColor = priorityColors[task.priority || "low"] || priorityColors.low;
+  const pStyle = priorityStyles[task.priority || "low"] || priorityStyles.low;
 
   return (
-    <div className="rounded-lg border border-neutral-200 bg-white p-3 shadow-sm">
-      <p className="text-sm font-medium text-neutral-800 mb-2">{task.title}</p>
-      <div className="flex items-center justify-between">
+    <div style={{
+      borderRadius: 'var(--radius-md)', border: '1px solid var(--separator)',
+      background: 'var(--material-regular)', padding: 12,
+      boxShadow: '0 1px 2px rgba(0,0,0,0.06)',
+    }}>
+      <p style={{ fontSize: 'var(--text-subheadline)', fontWeight: 500, color: 'var(--text-primary)', marginBottom: 8 }}>{task.title}</p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         {task.assignee && (
-          <span className="text-xs text-neutral-500">{task.assignee}</span>
+          <span style={{ fontSize: 'var(--text-caption1)', color: 'var(--text-tertiary)' }}>{task.assignee}</span>
         )}
         {task.priority && (
-          <span
-            className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full border ${priorityColor}`}
-          >
+          <span style={{ fontSize: 10, fontWeight: 500, padding: '2px 6px', borderRadius: 999, border: '1px solid', ...pStyle }}>
             {task.priority}
           </span>
         )}
@@ -55,19 +57,19 @@ function TaskCard({ task }: { task: Task }) {
 
 function Column({ title, tasks }: { title: string; tasks: Task[] }) {
   return (
-    <div className="flex-1 min-w-[220px]">
-      <div className="flex items-center gap-2 mb-3">
-        <h4 className="text-xs font-medium uppercase tracking-wide text-neutral-400">
+    <div style={{ flex: 1, minWidth: 220 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+        <h4 style={{ fontSize: 'var(--text-caption1)', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-quaternary)' }}>
           {title}
         </h4>
-        <span className="text-xs text-neutral-300">{tasks.length}</span>
+        <span style={{ fontSize: 'var(--text-caption1)', color: 'var(--text-quaternary)' }}>{tasks.length}</span>
       </div>
-      <div className="space-y-2">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {tasks.map((task, idx) => (
           <TaskCard key={task.id || idx} task={task} />
         ))}
         {tasks.length === 0 && (
-          <p className="text-xs text-neutral-300 text-center py-4">
+          <p style={{ fontSize: 'var(--text-caption1)', color: 'var(--text-quaternary)', textAlign: 'center', padding: '16px 0' }}>
             No tasks
           </p>
         )}
@@ -94,7 +96,7 @@ export function BoardView({ department }: { department: string }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64 text-neutral-400 text-sm">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 256, color: 'var(--text-quaternary)', fontSize: 'var(--text-subheadline)' }}>
         Loading board...
       </div>
     );
@@ -102,11 +104,11 @@ export function BoardView({ department }: { department: string }) {
 
   if (error) {
     return (
-      <div className="rounded-lg bg-neutral-50 border border-neutral-200 px-4 py-8 text-center">
-        <p className="text-sm text-neutral-500">
+      <div style={{ borderRadius: 'var(--radius-md)', background: 'var(--fill-tertiary)', border: '1px solid var(--separator)', padding: '32px 16px', textAlign: 'center' }}>
+        <p style={{ fontSize: 'var(--text-subheadline)', color: 'var(--text-tertiary)' }}>
           No board found for {department}.
         </p>
-        <p className="text-xs text-neutral-400 mt-1">
+        <p style={{ fontSize: 'var(--text-caption1)', color: 'var(--text-quaternary)', marginTop: 4 }}>
           Tasks will appear here when the department has a board set up.
         </p>
       </div>
@@ -154,12 +156,12 @@ export function BoardView({ department }: { department: string }) {
 
   return (
     <div>
-      <h2 className="text-xl font-semibold tracking-tight mb-1 capitalize">
+      <h2 style={{ fontSize: 'var(--text-title2)', fontWeight: 600, letterSpacing: '-0.3px', marginBottom: 4, textTransform: 'capitalize', color: 'var(--text-primary)' }}>
         {department}
       </h2>
-      <p className="text-sm text-neutral-500 mb-6">Department board</p>
+      <p style={{ fontSize: 'var(--text-subheadline)', color: 'var(--text-tertiary)', marginBottom: 24 }}>Department board</p>
 
-      <div className="flex gap-4 overflow-x-auto pb-4">
+      <div style={{ display: 'flex', gap: 16, overflowX: 'auto', paddingBottom: 16 }}>
         {displayColumns.map((col) => (
           <Column key={col.key} title={col.title} tasks={col.tasks} />
         ))}

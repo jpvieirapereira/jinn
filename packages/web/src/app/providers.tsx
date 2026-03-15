@@ -31,6 +31,20 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     if (saved) apply(saved)
   }, [apply])
 
+  // React to OS color scheme changes when theme is "system"
+  useEffect(() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    function handleChange() {
+      const current = localStorage.getItem('jinn-theme') as ThemeId | null
+      if (current === 'system') {
+        const el = document.documentElement
+        el.setAttribute('data-theme', mq.matches ? 'dark' : 'light')
+      }
+    }
+    mq.addEventListener('change', handleChange)
+    return () => mq.removeEventListener('change', handleChange)
+  }, [])
+
   return (
     <ThemeContext.Provider value={{ theme, setTheme: apply }}>
       {children}

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { api } from "@/lib/api";
-import { createGatewaySocket } from "@/lib/ws";
+import { useGateway } from "@/hooks/use-gateway";
 import { SessionList } from "@/components/sessions/session-list";
 import { SessionDetail } from "@/components/sessions/session-detail";
 import { PageLayout } from "@/components/page-layout";
@@ -38,6 +38,7 @@ export default function SessionsPage() {
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState("all");
   const closeRef = useRef<HTMLButtonElement>(null);
+  const { events } = useGateway();
 
   const fetchSessions = useCallback(async () => {
     try {
@@ -57,15 +58,14 @@ export default function SessionsPage() {
     fetchSessions();
   }, [fetchSessions]);
 
-  // Auto-refresh on WebSocket session events
+  // Auto-refresh on session events from shared WebSocket
   useEffect(() => {
-    const socket = createGatewaySocket((event) => {
-      if (event.startsWith("session")) {
-        fetchSessions();
-      }
-    });
-    return () => socket.close();
-  }, [fetchSessions]);
+    if (events.length === 0) return;
+    const latest = events[events.length - 1];
+    if (latest.event.startsWith("session")) {
+      fetchSessions();
+    }
+  }, [events, fetchSessions]);
 
   // ESC closes detail panel
   useEffect(() => {

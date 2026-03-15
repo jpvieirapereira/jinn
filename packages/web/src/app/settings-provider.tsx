@@ -95,94 +95,101 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [settings.accentColor])
 
-  const update = useCallback((next: JinnSettings) => {
-    setSettings(next)
-    saveSettings(next)
+  const update = useCallback((updater: (prev: JinnSettings) => JinnSettings) => {
+    setSettings((prev) => {
+      const next = updater(prev)
+      saveSettings(next)
+      return next
+    })
   }, [])
 
   const setAccentColor = useCallback(
     (color: string | null) => {
-      update({ ...settings, accentColor: color })
+      update((prev) => ({ ...prev, accentColor: color }))
     },
-    [settings, update],
+    [update],
   )
 
   const setPortalName = useCallback(
     (name: string | null) => {
-      update({ ...settings, portalName: name || null })
+      update((prev) => ({ ...prev, portalName: name || null }))
     },
-    [settings, update],
+    [update],
   )
 
   const setPortalSubtitle = useCallback(
     (subtitle: string | null) => {
-      update({ ...settings, portalSubtitle: subtitle || null })
+      update((prev) => ({ ...prev, portalSubtitle: subtitle || null }))
     },
-    [settings, update],
+    [update],
   )
 
   const setPortalEmoji = useCallback(
     (emoji: string | null) => {
-      update({ ...settings, portalEmoji: emoji || null })
+      update((prev) => ({ ...prev, portalEmoji: emoji || null }))
     },
-    [settings, update],
+    [update],
   )
 
   const setPortalIcon = useCallback(
     (icon: string | null) => {
-      update({ ...settings, portalIcon: icon })
+      update((prev) => ({ ...prev, portalIcon: icon }))
     },
-    [settings, update],
+    [update],
   )
 
   const setIconBgHidden = useCallback(
     (hidden: boolean) => {
-      update({ ...settings, iconBgHidden: hidden })
+      update((prev) => ({ ...prev, iconBgHidden: hidden }))
     },
-    [settings, update],
+    [update],
   )
 
   const setEmojiOnly = useCallback(
     (emojiOnly: boolean) => {
-      update({ ...settings, emojiOnly })
+      update((prev) => ({ ...prev, emojiOnly }))
     },
-    [settings, update],
+    [update],
   )
 
   const setOperatorName = useCallback(
     (name: string | null) => {
-      update({ ...settings, operatorName: name || null })
+      update((prev) => ({ ...prev, operatorName: name || null }))
     },
-    [settings, update],
+    [update],
   )
 
   const setLanguage = useCallback(
     (language: string) => {
-      update({ ...settings, language: language || "English" })
+      update((prev) => ({ ...prev, language: language || "English" }))
     },
-    [settings, update],
+    [update],
   )
 
   const setEmployeeOverride = useCallback(
     (employeeId: string, override: EmployeeOverride) => {
-      const existing = settings.employeeOverrides[employeeId] || {}
-      update({
-        ...settings,
-        employeeOverrides: {
-          ...settings.employeeOverrides,
-          [employeeId]: { ...existing, ...override },
-        },
+      update((prev) => {
+        const existing = prev.employeeOverrides[employeeId] || {}
+        return {
+          ...prev,
+          employeeOverrides: {
+            ...prev.employeeOverrides,
+            [employeeId]: { ...existing, ...override },
+          },
+        }
       })
     },
-    [settings, update],
+    [update],
   )
 
   const clearEmployeeOverride = useCallback(
     (employeeId: string) => {
-      const { [employeeId]: _, ...rest } = settings.employeeOverrides
-      update({ ...settings, employeeOverrides: rest })
+      update((prev) => {
+        const { [employeeId]: _, ...rest } = prev.employeeOverrides
+        return { ...prev, employeeOverrides: rest }
+      })
     },
-    [settings, update],
+    [update],
   )
 
   const getEmployeeDisplay = useCallback(
@@ -198,7 +205,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   )
 
   const resetAll = useCallback(() => {
-    const defaults: JinnSettings = {
+    update(() => ({
       accentColor: null,
       portalName: null,
       portalSubtitle: null,
@@ -209,8 +216,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       operatorName: null,
       language: "English",
       employeeOverrides: {},
-    }
-    update(defaults)
+    }))
   }, [update])
 
   return (

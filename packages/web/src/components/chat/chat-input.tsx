@@ -718,7 +718,7 @@ export function ChatInput({
             height: 32,
             borderRadius: '50%',
             background: hasContent ? 'var(--accent)' : 'var(--fill-tertiary)',
-            color: hasContent ? '#000' : 'var(--text-quaternary)',
+            color: hasContent ? 'var(--accent-contrast)' : 'var(--text-quaternary)',
             border: 'none',
             cursor: hasContent ? 'pointer' : 'default',
             display: 'flex',

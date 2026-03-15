@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import React, { useState } from "react";
 
 interface Employee {
   name: string;
@@ -14,11 +14,11 @@ interface OrgData {
   employees: Employee[];
 }
 
-const rankColors: Record<string, string> = {
-  executive: "bg-purple-100 text-purple-700",
-  manager: "bg-blue-100 text-blue-700",
-  senior: "bg-green-100 text-green-700",
-  employee: "bg-neutral-100 text-neutral-500",
+const rankStyles: Record<string, React.CSSProperties> = {
+  executive: { background: 'color-mix(in srgb, var(--system-purple) 15%, transparent)', color: 'var(--system-purple)' },
+  manager: { background: 'color-mix(in srgb, var(--accent) 15%, transparent)', color: 'var(--accent)' },
+  senior: { background: 'color-mix(in srgb, var(--system-green) 15%, transparent)', color: 'var(--system-green)' },
+  employee: { background: 'var(--fill-tertiary)', color: 'var(--text-tertiary)' },
 };
 
 const engineIcons: Record<string, string> = {
@@ -27,9 +27,11 @@ const engineIcons: Record<string, string> = {
 };
 
 function RankBadge({ rank }: { rank: string }) {
-  const colors = rankColors[rank] || rankColors.employee;
+  const style = rankStyles[rank] || rankStyles.employee;
   return (
-    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full ${colors}`}>
+    <span
+      style={{ fontSize: 10, fontWeight: 500, padding: '2px 6px', borderRadius: 999, ...style }}
+    >
       {rank}
     </span>
   );
@@ -37,7 +39,9 @@ function RankBadge({ rank }: { rank: string }) {
 
 function EngineIcon({ engine }: { engine: string }) {
   return (
-    <span className="text-[10px] font-mono bg-neutral-100 text-neutral-500 px-1 py-0.5 rounded">
+    <span
+      style={{ fontSize: 10, fontFamily: 'var(--font-mono)', background: 'var(--fill-tertiary)', color: 'var(--text-tertiary)', padding: '2px 4px', borderRadius: 'var(--radius-sm)' }}
+    >
       {engineIcons[engine] || engine?.charAt(0)?.toUpperCase() || "?"}
     </span>
   );
@@ -55,13 +59,25 @@ function EmployeeNode({
   return (
     <button
       onClick={() => onSelect(employee.name)}
-      className={`w-full text-left flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors ${
-        selected
-          ? "bg-blue-50 text-blue-700"
-          : "text-neutral-700 hover:bg-neutral-100"
-      }`}
+      style={{
+        width: '100%',
+        textAlign: 'left',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        padding: '6px 12px',
+        borderRadius: 'var(--radius-md)',
+        fontSize: 'var(--text-subheadline)',
+        background: selected ? 'var(--accent-fill)' : 'transparent',
+        color: selected ? 'var(--accent)' : 'var(--text-secondary)',
+        border: 'none',
+        cursor: 'pointer',
+        transition: 'background 150ms ease, color 150ms ease',
+      }}
+      onMouseEnter={(e) => { if (!selected) e.currentTarget.style.background = 'var(--fill-tertiary)' }}
+      onMouseLeave={(e) => { if (!selected) e.currentTarget.style.background = 'transparent' }}
     >
-      <span className="truncate flex-1">
+      <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
         {employee.displayName || employee.name}
       </span>
       {employee.rank && <RankBadge rank={employee.rank} />}
@@ -87,31 +103,41 @@ function DepartmentNode({
 }) {
   const [expanded, setExpanded] = useState(true);
 
+  const isSelected = selectedDepartment === name;
+
   return (
     <div>
-      <div className="flex items-center">
+      <div style={{ display: 'flex', alignItems: 'center' }}>
         <button
           onClick={() => setExpanded(!expanded)}
-          className="w-5 h-5 flex items-center justify-center text-neutral-400 hover:text-neutral-600 text-xs flex-shrink-0"
+          style={{
+            width: 20, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            color: 'var(--text-quaternary)', fontSize: 12, flexShrink: 0,
+            background: 'none', border: 'none', cursor: 'pointer',
+          }}
         >
           {expanded ? "\u25BC" : "\u25B6"}
         </button>
         <button
           onClick={() => onSelectDepartment(name)}
-          className={`flex-1 text-left px-2 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-            selectedDepartment === name
-              ? "bg-blue-50 text-blue-700"
-              : "text-neutral-800 hover:bg-neutral-100"
-          }`}
+          style={{
+            flex: 1, textAlign: 'left', padding: '6px 8px', borderRadius: 'var(--radius-md)',
+            fontSize: 'var(--text-subheadline)', fontWeight: 500,
+            background: isSelected ? 'var(--accent-fill)' : 'transparent',
+            color: isSelected ? 'var(--accent)' : 'var(--text-primary)',
+            border: 'none', cursor: 'pointer', transition: 'background 150ms ease, color 150ms ease',
+          }}
+          onMouseEnter={(e) => { if (!isSelected) e.currentTarget.style.background = 'var(--fill-tertiary)' }}
+          onMouseLeave={(e) => { if (!isSelected) e.currentTarget.style.background = 'transparent' }}
         >
           {name}
-          <span className="text-xs text-neutral-400 ml-1.5">
+          <span style={{ fontSize: 'var(--text-caption1)', color: 'var(--text-quaternary)', marginLeft: 6 }}>
             ({employees.length})
           </span>
         </button>
       </div>
       {expanded && (
-        <div className="ml-5 border-l border-neutral-200 pl-2 mt-0.5">
+        <div style={{ marginLeft: 20, borderLeft: '1px solid var(--separator)', paddingLeft: 8, marginTop: 2 }}>
           {employees.map((emp) => (
             <EmployeeNode
               key={emp.name}
@@ -163,9 +189,9 @@ export function OrgTree({
   );
 
   return (
-    <div className="space-y-1">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       {executive && (
-        <div className="mb-2">
+        <div style={{ marginBottom: 8 }}>
           <EmployeeNode
             employee={executive}
             selected={selectedEmployee === executive.name}
