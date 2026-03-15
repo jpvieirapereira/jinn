@@ -361,6 +361,15 @@ function ChatPage() {
     [selectedId, handleSelect]
   )
 
+  const handleInterrupt = useCallback(async () => {
+    if (!selectedId) return
+    try {
+      await api.sendMessage(selectedId, { message: '', interrupt: true })
+    } catch {
+      // ignore — session may already be done
+    }
+  }, [selectedId])
+
   const handleSend = useCallback(
     async (message: string, media?: MediaAttachment[], interrupt?: boolean) => {
       const userMsg: Message = {
@@ -718,6 +727,7 @@ function ChatPage() {
             disabled={false}
             loading={loading}
             onSend={handleSend}
+            onInterrupt={handleInterrupt}
             onNewSession={handleNewChat}
             onStatusRequest={handleStatusRequest}
             skillsVersion={skillsVersion}
