@@ -26,6 +26,7 @@ function sanitizeTicket(id: string, raw: Record<string, unknown>): KanbanTicket 
     status,
     priority,
     assigneeId: typeof raw.assigneeId === 'string' ? raw.assigneeId : null,
+    department: typeof raw.department === 'string' ? raw.department : null,
     workState,
     createdAt: typeof raw.createdAt === 'number' ? raw.createdAt : 0,
     updatedAt: typeof raw.updatedAt === 'number' ? raw.updatedAt : (typeof raw.createdAt === 'number' ? raw.createdAt : 0),
@@ -69,7 +70,7 @@ export function saveTickets(store: KanbanStore): void {
 
 export function createTicket(
   store: KanbanStore,
-  ticket: Omit<KanbanTicket, 'id' | 'createdAt' | 'updatedAt' | 'workState'>,
+  ticket: Omit<KanbanTicket, 'id' | 'createdAt' | 'updatedAt' | 'workState'> & { department?: string | null },
 ): KanbanStore {
   const id = crypto.randomUUID()
   const now = Date.now()

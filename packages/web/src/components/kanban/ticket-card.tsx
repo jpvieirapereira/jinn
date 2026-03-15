@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from 'react'
+import { Trash2 } from 'lucide-react'
 import type { KanbanTicket } from '@/lib/kanban/types'
 import { PRIORITY_COLORS } from '@/lib/kanban/types'
 
@@ -26,10 +27,12 @@ interface TicketCardProps {
   ticket: KanbanTicket
   assigneeName: string | null
   onClick: () => void
+  onDelete?: () => void
 }
 
-export function TicketCard({ ticket, assigneeName, onClick }: TicketCardProps) {
+export function TicketCard({ ticket, assigneeName, onClick, onDelete }: TicketCardProps) {
   const [isDragging, setIsDragging] = useState(false)
+  const [isHovered, setIsHovered] = useState(false)
 
   function handleDragStart(e: React.DragEvent<HTMLDivElement>) {
     e.dataTransfer.setData('text/plain', ticket.id)
@@ -47,6 +50,8 @@ export function TicketCard({ ticket, assigneeName, onClick }: TicketCardProps) {
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
       onClick={onClick}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
@@ -56,6 +61,7 @@ export function TicketCard({ ticket, assigneeName, onClick }: TicketCardProps) {
         }
       }}
       style={{
+        position: 'relative',
         background: 'var(--material-regular)',
         borderRadius: 'var(--radius-md)',
         padding: 'var(--space-3)',
@@ -70,6 +76,37 @@ export function TicketCard({ ticket, assigneeName, onClick }: TicketCardProps) {
         transition: 'opacity 150ms var(--ease-smooth)',
       }}
     >
+      {/* Delete button (visible on hover) */}
+      {isHovered && onDelete && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation()
+            onDelete()
+          }}
+          aria-label="Delete ticket"
+          title="Delete ticket"
+          style={{
+            position: 'absolute',
+            top: 6,
+            right: 6,
+            width: 24,
+            height: 24,
+            borderRadius: 'var(--radius-sm)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'color-mix(in srgb, var(--system-red) 12%, transparent)',
+            color: 'var(--system-red)',
+            border: 'none',
+            cursor: 'pointer',
+            padding: 0,
+            zIndex: 1,
+          }}
+        >
+          <Trash2 size={13} />
+        </button>
+      )}
+
       {/* Priority + Title */}
       <div
         style={{

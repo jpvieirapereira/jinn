@@ -84,9 +84,7 @@ export function TicketDetailPanel({
   }, [])
 
   function handleDelete() {
-    if (window.confirm(`Delete ticket "${ticket.title}"? This cannot be undone.`)) {
-      onDelete()
-    }
+    onDelete()
   }
 
   const assignee = employees.find(e => e.name === ticket.assigneeId) ?? null

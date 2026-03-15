@@ -14,6 +14,7 @@ interface KanbanBoardProps {
   onTicketClick: (ticket: KanbanTicket) => void
   onMoveTicket: (ticketId: string, status: TicketStatus) => void
   onCreateTicket: () => void
+  onDeleteTicket?: (ticket: KanbanTicket) => void
   filterEmployeeId?: string | null
 }
 
@@ -23,6 +24,7 @@ export function KanbanBoard({
   onTicketClick,
   onMoveTicket,
   onCreateTicket,
+  onDeleteTicket,
   filterEmployeeId,
 }: KanbanBoardProps) {
   return (
@@ -57,6 +59,7 @@ export function KanbanBoard({
                   ticket={ticket}
                   assigneeName={emp?.displayName ?? null}
                   onClick={() => onTicketClick(ticket)}
+                  onDelete={onDeleteTicket ? () => onDeleteTicket(ticket) : undefined}
                 />
               )
             }}

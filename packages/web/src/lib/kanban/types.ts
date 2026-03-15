@@ -13,6 +13,7 @@ export interface KanbanTicket {
   status: TicketStatus
   priority: TicketPriority
   assigneeId: string | null // employee name from /api/org
+  department: string | null // department for API persistence
   workState: WorkState
   createdAt: number
   updatedAt: number
