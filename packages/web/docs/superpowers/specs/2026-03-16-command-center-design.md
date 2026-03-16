@@ -52,8 +52,8 @@ interface Task {
   id: string
   projectId: string               // belongs to a project
   title: string                   // "Localize blog to German"
-  status: 'todo' | 'in_progress' | 'done' | 'blocked'
-  priority: 'urgent' | 'normal' | 'low'
+  status: 'todo' | 'in-progress' | 'done' | 'blocked'  // hyphens (matches existing Kanban convention)
+  priority: 'urgent' | 'normal' | 'low' | null          // null = no priority set (default)
   sessionIds: string[]            // linked sessions that work on this task
   attentionRequired: boolean      // bubbles up from linked sessions or set manually
   createdAt: string
@@ -88,12 +88,14 @@ interface CronJob {
 
 ### Auto-Tagging Logic
 
-Runs on session create/update via a `project-tagger` module:
+Runs as a **one-shot operation** on session create/update via a `project-tagger` module. Does NOT trigger recursive re-evaluation of related sessions — reads their tags but does not write to them.
+
+Triggered by: `POST /api/sessions` handler and `session:started` / `session:completed` WebSocket events.
 
 1. If session has manual project tags → skip (manual takes precedence)
 2. Look up `session.employee` → find employee's department in org registry → map department to project
-3. Check parent session's project tags → inherit
-4. Check child sessions' project tags → inherit (reverse: COO session gets tagged from its children)
+3. Check parent session's project tags → inherit (read-only, does not re-tag parent)
+4. Check child sessions' project tags → inherit (read-only, does not re-tag children; only applies when steps 1-3 yielded no tags)
 5. Scan `session.title` for known project name keywords → auto-tag matches
 6. If no match after all steps → tag as `"general"` (the catch-all Inbox project)
 
@@ -194,7 +196,7 @@ Opens from right on project click in any view. 40% width desktop, full width mob
 - "+ Add Task" button in Todo column
 
 **Filtered Session List (bottom half):**
-- Only this project's sessions
+- Only this project's sessions, **paginated**: show 20 most recent, "Load more" button
 - Sort: attention-required → running → errors → recent idle
 - Each row: status dot, title/employee, relative time, priority badge, attention toggle
 - Right-click context menu: set priority, toggle attention, remove from project, delete
@@ -260,14 +262,90 @@ UI: Dropdown or popover in the Command Center top bar, right-aligned. Quick pres
 New events for real-time Command Center updates:
 - `project:created`, `project:updated`, `project:deleted`
 - `task:created`, `task:updated`, `task:deleted`
-- `session:priority-changed`, `session:attention-changed`
+- `session:updated` — single event with `fields` payload indicating what changed (projects, priority, attentionRequired); consistent with existing `session:*` naming pattern
 
-## Storage
+## Server-Side Changes
+
+### Storage
+
+Projects and tasks are stored in **JSON files** alongside existing gateway data:
+
+- `~/.jinn/projects.json` — array of `Project` objects, loaded into memory on gateway startup, flushed on every mutation
+- `~/.jinn/tasks.json` — array of `Task` objects, same lifecycle
+
+This follows the existing pattern used by `cron/jobs.json` and session storage — file-based, watched for changes, hot-reloaded.
+
+### Session Schema Migration
+
+The `Session` interface in `packages/jimmy/src/shared/types.ts` gains three new fields:
+
+```typescript
+projects: string[]              // default: []
+attentionRequired: boolean      // default: false
+priority: 'urgent' | 'normal' | 'low' | null  // default: null
+```
+
+**Migration for existing 172 sessions**: On first gateway startup after deploy, sessions without these fields get defaults applied (`projects: []`, `attentionRequired: false`, `priority: null`). This is a backward-compatible additive change — no data loss.
+
+### New Gateway Routes
+
+In `packages/jimmy/src/gateway/api.ts`:
+
+- `PATCH /api/sessions/:id` — new route accepting `{projects?, priority?, attentionRequired?}`, updates session in registry and emits `session:updated` WebSocket event
+- `GET/POST /api/projects` — CRUD for projects (read/write `projects.json`)
+- `PUT/DELETE /api/projects/:id` — update/delete individual project
+- `GET/POST /api/projects/:id/tasks` — CRUD for tasks scoped to project
+- `PUT/DELETE /api/tasks/:id` — update/delete individual task
+
+### Web Client API Extension
+
+In `packages/web/src/lib/api.ts`, add:
+
+```typescript
+patchSession(id: string, data: { projects?: string[]; priority?: string; attentionRequired?: boolean })
+getProjects(): Promise<Project[]>
+createProject(data: Partial<Project>): Promise<Project>
+updateProject(id: string, data: Partial<Project>): Promise<Project>
+deleteProject(id: string): Promise<void>
+getProjectTasks(projectId: string): Promise<Task[]>
+createTask(projectId: string, data: Partial<Task>): Promise<Task>
+updateTask(id: string, data: Partial<Task>): Promise<Task>
+deleteTask(id: string): Promise<void>
+```
+
+### Auto-Tagger Module
+
+New module `packages/jimmy/src/gateway/project-tagger.ts`:
+- Exported function `autoTagSession(session: Session, projects: Project[], org: OrgRegistry): string[]`
+- Called synchronously by the session create/update handlers
+- Returns array of project IDs to assign
+
+### Cron Job Extension
+
+Existing `PUT /api/cron/:id` endpoint accepts the two new fields: `attentionRequired` and `defaultPriority`. Existing cron jobs without these fields default to `{ attentionRequired: false, defaultPriority: null }`.
+
+When the cron runner creates a child session, it copies `attentionRequired` and `defaultPriority` from the job definition to the new session.
+
+### Project Stats (Server-Side Aggregation)
+
+`GET /api/projects` response includes computed stats per project to avoid expensive client-side aggregation:
+
+```typescript
+interface ProjectWithStats extends Project {
+  stats: {
+    totalSessions: number
+    runningSessions: number
+    errorSessions: number
+    attentionCount: number
+    tasksByStatus: { todo: number; 'in-progress': number; done: number; blocked: number }
+  }
+}
+```
+
+## Client-Side Storage
 
 | Data | Storage | Rationale |
 |------|---------|-----------|
-| Projects | Server-side (JSON or SQLite) | Shared truth, survives browser clear |
-| Tasks | Server-side (same store) | Linked to sessions server-side |
 | Graph node positions | localStorage `jinn-graph-positions` | Per-user visual preference |
 | Decay filter settings | localStorage `jinn-decay-filter` | Per-user preference |
 | Active tab | localStorage `jinn-command-tab` | Remember last view |
@@ -277,7 +355,8 @@ New events for real-time Command Center updates:
 
 - New nav item: `{ href: "/command", label: "Command Center", icon: Radar }` — positioned second (after Home)
 - Attention badge on nav icon: red pill with count of `attentionRequired` sessions
-- Remove `/kanban` from nav (replaced by per-project Kanban in Command Center)
+- Remove `/kanban` from nav (replaced by per-project Kanban in Command Center). Add 301 redirect from `/kanban` → `/command` for bookmarks.
+- Existing Kanban board data migration: map `backlog` → `todo`, `review` → `in-progress`, `in-progress` → `in-progress` (normalize hyphens). Existing board tickets become Tasks linked to their department's project.
 - `/sessions` page stays as lower-level admin view
 - `/chat` page keeps its existing sidebar unchanged
 
@@ -288,6 +367,26 @@ New events for real-time Command Center updates:
 - **Timeline**: Custom React + CSS Grid with horizontal scroll/zoom
 - **Slide-over panel**: Custom React component with Framer Motion or CSS transitions
 - **State management**: React hooks + SWR or similar for server state (follows existing patterns in the codebase)
+
+## View States
+
+All three views handle these states consistently:
+
+| State | Graph | Dashboard | Timeline |
+|-------|-------|-----------|----------|
+| **Loading** | Skeleton nodes with pulse animation | Skeleton cards | Skeleton swimlanes |
+| **Error** | "Failed to load. Retry?" with retry button | Same | Same |
+| **Empty (no projects)** | "No projects yet. Create one to get started." + create button | Same | Same |
+| **Empty (filtered)** | "All quiet. Adjust the time filter to see older sessions." | Same | Same |
+| **WS disconnected** | Yellow banner: "Reconnecting..." (auto-retry) | Same | Same |
+
+## Accessibility
+
+- Graph nodes are keyboard-focusable (`Tab` to navigate, `Enter` to open slide-over)
+- `Tab`/`1`/`2`/`3` keyboard shortcuts to switch between Graph/Dashboard/Timeline tabs
+- Slide-over traps focus when open, `Escape` to close
+- All status indicators (pulsing, glowing, colored) have `aria-label` descriptions (e.g., "Pravko: 2 errors, 1 running")
+- Color is never the only indicator — status dots include shape differentiation (circle = running, triangle = error, diamond = attention)
 
 ## Out of Scope
 
