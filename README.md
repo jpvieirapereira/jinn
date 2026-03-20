@@ -48,7 +48,9 @@ When Claude Code gets better, Jinn gets better — automatically.
 ## ✨ Features
 
 - 🔌 **Dual engine support** — Claude Code CLI + Codex SDK
-- 💬 **Slack integration** — thread-aware routing with reaction workflow
+- 💬 **Connectors** — Slack (threads + reactions), WhatsApp (QR auth), Discord (bot)
+- 📎 **File attachments** — drag & drop files into web chat, passed through to engines
+- 📱 **Mobile-responsive** — collapsible sidebar and mobile-friendly dashboard
 - ⏰ **Cron scheduling** — hot-reloadable background jobs
 - 👥 **AI org system** — departments, ranks, managers, employees, task boards
 - 🌐 **Web dashboard** — chat, org map, kanban, cost tracking, cron visualizer
@@ -84,7 +86,7 @@ Then open [http://localhost:7777](http://localhost:7777).
               |                 |  |                  |
       +-------v-------+ +------v------+  +-----------v---+
       |    Engines     | | Connectors  |  |    Web UI     |
-      | Claude | Codex | |   Slack     |  | localhost:7777|
+      | Claude | Codex | | Slack|WA|DC |  | localhost:7777|
       +----------------+ +-------------+  +---------------+
               |                 |
       +-------v-------+ +------v------+
@@ -166,11 +168,11 @@ pnpm dev
 Jinn is under active development. Here's what's coming:
 
 ### 🔌 Connectors
-- [ ] **Discord** — bot integration via discord.js
+- [x] **Discord** — bot integration via discord.js
+- [x] **WhatsApp** — Baileys-based connector with QR auth and media support
 - [ ] **Telegram** — bot API connector
 - [ ] **iMessage** — macOS-native via AppleScript bridge
 - [ ] **Email** — IMAP/SMTP connector for inbox monitoring and replies
-- [ ] **WhatsApp** — Business API connector
 - [ ] **Webhooks** — generic inbound/outbound HTTP webhooks
 
 ### 🧠 Engines
@@ -185,8 +187,9 @@ Jinn is under active development. Here's what's coming:
 - [x] **Auto-promotion** — promote employees to manager based on track record
 
 ### 🌐 Web Dashboard
-- [ ] **Mobile-responsive UI** — manage your org from your phone
+- [x] **Mobile-responsive UI** — collapsible sidebar, mobile-friendly chat
 - [x] **Live streaming** — watch agent responses stream in real-time
+- [x] **File attachments** — drag & drop files into chat with engine passthrough
 - [ ] **Approval workflows** — approve/reject agent actions from the dashboard
 - [ ] **Cost analytics** — per-employee, per-department cost breakdowns
 
