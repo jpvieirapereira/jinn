@@ -5,6 +5,7 @@ import type { IncomingMessage, Target } from "../../../shared/types.js";
 const mockSendMessage = vi.fn().mockResolvedValue({ message_id: 1 });
 const mockEditMessageText = vi.fn().mockResolvedValue(true);
 const mockGetMe = vi.fn().mockResolvedValue({ id: 999, username: "test_bot" });
+const mockStartPolling = vi.fn();
 const mockStopPolling = vi.fn().mockResolvedValue(undefined);
 const mockOn = vi.fn();
 
@@ -13,6 +14,7 @@ vi.mock("node-telegram-bot-api", () => {
     this.sendMessage = mockSendMessage;
     this.editMessageText = mockEditMessageText;
     this.getMe = mockGetMe;
+    this.startPolling = mockStartPolling;
     this.stopPolling = mockStopPolling;
     this.on = mockOn;
   });
@@ -66,20 +68,22 @@ describe("TelegramConnector", () => {
   });
 
   describe("start", () => {
-    it("registers message handler and sets running state", async () => {
+    it("registers message handler and starts polling after validation", async () => {
       await connector.start();
       const health = connector.getHealth();
       expect(health.status).toBe("running");
       expect(mockGetMe).toHaveBeenCalledOnce();
+      expect(mockStartPolling).toHaveBeenCalledOnce();
       expect(mockOn).toHaveBeenCalledWith("message", expect.any(Function));
     });
 
-    it("logs error and sets error state if getMe fails", async () => {
+    it("does not start polling if getMe fails (invalid token)", async () => {
       mockGetMe.mockRejectedValueOnce(new Error("Invalid token"));
       await connector.start();
       const health = connector.getHealth();
       expect(health.status).toBe("error");
       expect(health.detail).toContain("Invalid token");
+      expect(mockStartPolling).not.toHaveBeenCalled();
     });
   });
 
@@ -170,6 +174,54 @@ describe("TelegramConnector", () => {
       await messageCallback(msg);
       expect(handler).not.toHaveBeenCalled();
     });
+
+    it("rejects messages with from: undefined when allowFrom is set", async () => {
+      const restricted = new TelegramConnector({
+        botToken: "123456:ABC-DEF",
+        allowFrom: [67890],
+      });
+      const handler = vi.fn();
+      restricted.onMessage(handler);
+      await restricted.start();
+
+      const messageCallback = mockOn.mock.calls.find(
+        (call) => call[0] === "message",
+      )?.[1];
+
+      // Channel post or forwarded message with no `from`
+      const msg = {
+        message_id: 1,
+        chat: { id: 11111, type: "channel" as const },
+        date: Math.floor(Date.now() / 1000) + 10,
+        text: "Channel post",
+      };
+      await messageCallback(msg);
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it("allows messages from authorized users through allowFrom", async () => {
+      const restricted = new TelegramConnector({
+        botToken: "123456:ABC-DEF",
+        allowFrom: [67890],
+      });
+      const handler = vi.fn();
+      restricted.onMessage(handler);
+      await restricted.start();
+
+      const messageCallback = mockOn.mock.calls.find(
+        (call) => call[0] === "message",
+      )?.[1];
+
+      const msg = {
+        message_id: 1,
+        chat: { id: 12345, type: "private" as const },
+        from: { id: 67890, username: "allowed_user", first_name: "Allowed", is_bot: false },
+        date: Math.floor(Date.now() / 1000) + 10,
+        text: "Hello",
+      };
+      await messageCallback(msg);
+      expect(handler).toHaveBeenCalledOnce();
+    });
   });
 
   describe("sendMessage", () => {
@@ -192,6 +244,19 @@ describe("TelegramConnector", () => {
       const longText = "A".repeat(5000);
       await connector.sendMessage(target, longText);
       expect(mockSendMessage).toHaveBeenCalledTimes(2);
+    });
+
+    it("retries without parse_mode on Markdown parse error", async () => {
+      mockSendMessage
+        .mockRejectedValueOnce(new Error("Bad Request: can't parse entities"))
+        .mockResolvedValueOnce({ message_id: 2 });
+      const target: Target = { channel: "12345" };
+      const result = await connector.sendMessage(target, "**bad markdown");
+      // First call with Markdown, second without
+      expect(mockSendMessage).toHaveBeenCalledTimes(2);
+      expect(mockSendMessage.mock.calls[0][2]).toEqual({ parse_mode: "Markdown" });
+      expect(mockSendMessage.mock.calls[1][2]).toEqual({});
+      expect(result).toBe("2");
     });
   });
 

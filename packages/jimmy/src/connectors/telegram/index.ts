@@ -30,7 +30,7 @@ export class TelegramConnector implements Connector {
   };
 
   constructor(config: TelegramConnectorConfig) {
-    this.bot = new TelegramBot(config.botToken, { polling: true });
+    this.bot = new TelegramBot(config.botToken, { polling: false });
     this.ignoreOldMessagesOnBoot = config.ignoreOldMessagesOnBoot !== false;
     this.allowedUsers =
       config.allowFrom && config.allowFrom.length > 0
@@ -42,6 +42,7 @@ export class TelegramConnector implements Connector {
     try {
       const me = await this.bot.getMe();
       logger.info(`[telegram] Bot started: @${me.username} (id: ${me.id})`);
+      this.bot.startPolling();
       this.started = true;
       this.lastError = null;
     } catch (err) {
@@ -72,11 +73,13 @@ export class TelegramConnector implements Connector {
       }
 
       const userId = telegramMsg.from?.id;
-      if (this.allowedUsers && userId !== undefined && !this.allowedUsers.has(userId)) {
-        logger.debug(
-          `[telegram] Ignoring message from unauthorized user ${userId}`,
-        );
-        return;
+      if (this.allowedUsers) {
+        if (userId === undefined || !this.allowedUsers.has(userId)) {
+          logger.debug(
+            `[telegram] Ignoring message from unauthorized user ${userId}`,
+          );
+          return;
+        }
       }
 
       const sessionKey = deriveSessionKey(telegramMsg);
@@ -132,16 +135,38 @@ export class TelegramConnector implements Connector {
     };
   }
 
+  private async safeSend(
+    chatId: string,
+    text: string,
+    opts: TelegramBot.SendMessageOptions = {},
+  ): Promise<string | undefined> {
+    try {
+      const result = await this.bot.sendMessage(chatId, text, {
+        parse_mode: "Markdown",
+        ...opts,
+      });
+      return String(result.message_id);
+    } catch (err) {
+      // On parse error, retry without Markdown formatting
+      logger.warn(`[telegram] Send failed with Markdown, retrying as plain text: ${err}`);
+      try {
+        const result = await this.bot.sendMessage(chatId, text, opts);
+        return String(result.message_id);
+      } catch (retryErr) {
+        logger.error(`[telegram] Send failed: ${retryErr}`);
+        return undefined;
+      }
+    }
+  }
+
   async sendMessage(target: Target, text: string): Promise<string | undefined> {
     if (!text || !text.trim()) return undefined;
     const chunks = formatResponse(text);
     let lastMessageId: string | undefined;
     for (const chunk of chunks) {
       if (!chunk.trim()) continue;
-      const result = await this.bot.sendMessage(target.channel, chunk, {
-        parse_mode: "Markdown",
-      });
-      lastMessageId = String(result.message_id);
+      const id = await this.safeSend(target.channel, chunk);
+      if (id) lastMessageId = id;
     }
     return lastMessageId;
   }
@@ -152,18 +177,16 @@ export class TelegramConnector implements Connector {
       target.replyContext?.messageId != null
         ? Number(target.replyContext.messageId)
         : undefined;
+    const opts: TelegramBot.SendMessageOptions = {};
+    if (replyToId) {
+      opts.reply_to_message_id = replyToId;
+    }
     const chunks = formatResponse(text);
     let lastMessageId: string | undefined;
     for (const chunk of chunks) {
       if (!chunk.trim()) continue;
-      const opts: TelegramBot.SendMessageOptions = {
-        parse_mode: "Markdown",
-      };
-      if (replyToId) {
-        opts.reply_to_message_id = replyToId;
-      }
-      const result = await this.bot.sendMessage(target.channel, chunk, opts);
-      lastMessageId = String(result.message_id);
+      const id = await this.safeSend(target.channel, chunk, opts);
+      if (id) lastMessageId = id;
     }
     return lastMessageId;
   }

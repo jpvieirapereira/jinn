@@ -1,7 +1,7 @@
 const TELEGRAM_MAX_LENGTH = 4096;
 
 /**
- * Convert standard markdown to Telegram MarkdownV2-compatible format.
+ * Convert standard markdown to Telegram Markdown format.
  * Handles headings, bold, italic, strikethrough, links, and bullet lists.
  * Preserves code blocks and inline code untouched.
  */
