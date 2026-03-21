@@ -4,8 +4,10 @@ import { useState, useCallback, useEffect, useRef } from 'react'
 import { api } from '@/lib/api'
 import { ChatMessages } from '@/components/chat/chat-messages'
 import { ChatInput } from '@/components/chat/chat-input'
+import { ChatEmployeePicker } from '@/components/chat/chat-employee-picker'
 import { QueuePanel } from '@/components/chat/queue-panel'
 import { CliTranscript } from '@/components/chat/cli-transcript'
+import { buildNewSessionParams } from '@/components/chat/new-chat-helpers'
 import type { Message, MediaAttachment } from '@/lib/conversations'
 import { saveIntermediateMessages, loadIntermediateMessages, clearIntermediateMessages } from '@/lib/conversations'
 
@@ -68,6 +70,29 @@ export function ChatPane({
   const intermediateStartRef = useRef<number>(-1)
   const [currentSession, setCurrentSession] = useState<Record<string, unknown> | null>(null)
   const sessionIdRef = useRef(sessionId)
+
+  // Employee picker state for new chat
+  const [selectedEmployee, setSelectedEmployee] = useState<string | null>(null)
+  const [pickerEmployees, setPickerEmployees] = useState<Array<{ name: string; displayName: string; department: string; rank: string }>>([])
+
+  // Fetch employees for picker when in new-chat mode
+  useEffect(() => {
+    if (sessionId) return // Only fetch when no active session
+    api.getOrg().then(async (data) => {
+      if (!Array.isArray(data.employees)) return
+      const details = await Promise.all(
+        data.employees.map(async (name: string) => {
+          try {
+            const emp = await api.getEmployee(name)
+            return { name: emp.name, displayName: emp.displayName, department: emp.department, rank: emp.rank }
+          } catch {
+            return { name, displayName: name, department: '', rank: 'employee' }
+          }
+        })
+      )
+      setPickerEmployees(details)
+    }).catch(() => {})
+  }, [sessionId])
   useEffect(() => { sessionIdRef.current = sessionId }, [sessionId])
 
   // Helper: persist intermediate messages to localStorage
@@ -289,6 +314,7 @@ export function ChatPane({
       streamingTextRef.current = ''
       setStreamingText('')
       intermediateStartRef.current = -1
+      setSelectedEmployee(null)
       return
     }
     loadSession(sessionId)
@@ -363,11 +389,12 @@ export function ChatPane({
           await api.sendMessage(sid, { message: onboardingPrompt, attachments: attachmentIds })
           onRefresh?.()
         } else if (!sid) {
-          const session = (await api.createSession({
-            source: 'web',
-            prompt: message,
-            attachments: attachmentIds,
-          })) as Record<string, unknown>
+          const params = buildNewSessionParams({
+            message,
+            selectedEmployee,
+            attachmentIds,
+          })
+          const session = (await api.createSession(params)) as Record<string, unknown>
           sid = String(session.id)
           onSessionCreated?.(sid)
           onRefresh?.()
@@ -543,12 +570,24 @@ export function ChatPane({
           </div>
         </div>
       )}
+      {/* Employee picker for new chat */}
+      {!sessionId && messages.length === 0 && viewMode === 'chat' && (
+        <div className="flex flex-1 items-center justify-center">
+          <ChatEmployeePicker
+            employees={pickerEmployees}
+            selectedEmployee={selectedEmployee}
+            onSelect={setSelectedEmployee}
+            portalName={portalName}
+          />
+        </div>
+      )}
+
       {/* Messages / CLI transcript */}
       {viewMode === 'cli' && sessionId ? (
         <CliTranscript sessionId={sessionId} />
-      ) : (
+      ) : (sessionId || messages.length > 0) ? (
         <ChatMessages messages={messages} loading={loading} streamingText={streamingText} />
-      )}
+      ) : null}
 
       {/* Queue panel */}
       {viewMode === 'chat' && (
