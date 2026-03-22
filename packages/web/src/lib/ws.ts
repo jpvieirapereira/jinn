@@ -4,8 +4,10 @@ export function createGatewaySocket(
   onEvent: EventHandler,
   opts?: { onOpen?: () => void; onClose?: () => void },
 ): { close: () => void } {
-  const wsUrl =
-    typeof window !== "undefined"
+  const gatewayUrl = process.env.NEXT_PUBLIC_GATEWAY_URL;
+  const wsUrl = gatewayUrl
+    ? `${gatewayUrl.replace(/^http/, "ws")}/ws`
+    : typeof window !== "undefined"
       ? `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}/ws`
       : "ws://127.0.0.1:7777/ws";
 
