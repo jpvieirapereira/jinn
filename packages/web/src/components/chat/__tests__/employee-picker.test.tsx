@@ -14,12 +14,12 @@ vi.mock('@/components/ui/employee-avatar', () => ({
 const mockEmployees = [
   { name: 'jimmy-dev', displayName: 'Jimmy Dev', department: 'platform', rank: 'senior' as const },
   { name: 'pravko-lead', displayName: 'Pravko Lead', department: 'pravko', rank: 'manager' as const },
+  { name: 'pravko-writer', displayName: 'Pravko Writer', department: 'pravko', rank: 'employee' as const },
   { name: 'homy-lead', displayName: 'Homy Lead', department: 'homy', rank: 'manager' as const },
+  { name: 'homy-writer', displayName: 'Homy Writer', department: 'homy', rank: 'employee' as const },
   { name: 'sqlnoir-lead', displayName: 'SQLNoir Lead', department: 'sqlnoir', rank: 'manager' as const },
   { name: 'spycam-lead', displayName: 'SpyCam Lead', department: 'spycam', rank: 'manager' as const },
   { name: 'movekit-lead', displayName: 'MoveKit Lead', department: 'movekit', rank: 'senior' as const },
-  { name: 'homy-writer', displayName: 'Homy Writer', department: 'homy', rank: 'employee' as const },
-  { name: 'pravko-writer', displayName: 'Pravko Writer', department: 'pravko', rank: 'employee' as const },
   { name: 'reddit-scout', displayName: 'Reddit Scout', department: 'marketing', rank: 'employee' as const },
 ]
 
@@ -30,7 +30,9 @@ describe('ChatEmployeePicker', () => {
     onChange = vi.fn<(name: string | null) => void>()
   })
 
-  it('renders COO as the default selected option', () => {
+  // --- COO rendering ---
+
+  it('renders COO at the top, highlighted as default', () => {
     render(
       <ChatEmployeePicker
         employees={mockEmployees}
@@ -39,13 +41,27 @@ describe('ChatEmployeePicker', () => {
         portalName="Jinn"
       />
     )
-    // COO chip should be visually selected
-    const cooChip = screen.getByRole('button', { name: /jinn/i })
-    expect(cooChip).toBeDefined()
-    expect(cooChip.getAttribute('aria-pressed')).toBe('true')
+    const cooRow = screen.getByRole('option', { name: /jinn/i })
+    expect(cooRow).toBeDefined()
+    expect(cooRow.getAttribute('aria-selected')).toBe('true')
   })
 
-  it('shows first 7 employees plus COO', () => {
+  it('calls onSelect(null) when COO row is clicked', () => {
+    render(
+      <ChatEmployeePicker
+        employees={mockEmployees}
+        selectedEmployee="jimmy-dev"
+        onSelect={onChange}
+        portalName="Jinn"
+      />
+    )
+    fireEvent.click(screen.getByRole('option', { name: /jinn/i }))
+    expect(onChange).toHaveBeenCalledWith(null)
+  })
+
+  // --- Department grouping ---
+
+  it('groups employees by department with section headers', () => {
     render(
       <ChatEmployeePicker
         employees={mockEmployees}
@@ -54,54 +70,34 @@ describe('ChatEmployeePicker', () => {
         portalName="Jinn"
       />
     )
-    // COO + 7 employees visible initially (before "More")
-    // The 8th and 9th employees should be hidden behind "More"
+    // Department headers should be present
+    expect(screen.getByText('platform')).toBeDefined()
+    expect(screen.getByText('pravko')).toBeDefined()
+    expect(screen.getByText('homy')).toBeDefined()
+    expect(screen.getByText('sqlnoir')).toBeDefined()
+    expect(screen.getByText('marketing')).toBeDefined()
+  })
+
+  it('renders employees within their department groups', () => {
+    render(
+      <ChatEmployeePicker
+        employees={mockEmployees}
+        selectedEmployee={null}
+        onSelect={onChange}
+        portalName="Jinn"
+      />
+    )
+    // All employees should be visible (no more/less toggle)
     expect(screen.getByText('Jimmy Dev')).toBeDefined()
-    expect(screen.getByText('Homy Writer')).toBeDefined()
-    // 8th employee (index 7) should NOT be visible initially
-    expect(screen.queryByText('Pravko Writer')).toBeNull()
-  })
-
-  it('shows "More" button when there are more than 7 employees', () => {
-    render(
-      <ChatEmployeePicker
-        employees={mockEmployees}
-        selectedEmployee={null}
-        onSelect={onChange}
-        portalName="Jinn"
-      />
-    )
-    expect(screen.getByRole('button', { name: /more/i })).toBeDefined()
-  })
-
-  it('does not show "More" button when 7 or fewer employees', () => {
-    render(
-      <ChatEmployeePicker
-        employees={mockEmployees.slice(0, 7)}
-        selectedEmployee={null}
-        onSelect={onChange}
-        portalName="Jinn"
-      />
-    )
-    expect(screen.queryByRole('button', { name: /more/i })).toBeNull()
-  })
-
-  it('expands to show all employees when "More" is clicked', () => {
-    render(
-      <ChatEmployeePicker
-        employees={mockEmployees}
-        selectedEmployee={null}
-        onSelect={onChange}
-        portalName="Jinn"
-      />
-    )
-    fireEvent.click(screen.getByRole('button', { name: /more/i }))
-    // Now all employees should be visible
+    expect(screen.getByText('Pravko Lead')).toBeDefined()
     expect(screen.getByText('Pravko Writer')).toBeDefined()
+    expect(screen.getByText('Homy Lead')).toBeDefined()
     expect(screen.getByText('Reddit Scout')).toBeDefined()
   })
 
-  it('calls onSelect with employee name when clicked', () => {
+  // --- Selection ---
+
+  it('calls onSelect with employee name when row is clicked', () => {
     render(
       <ChatEmployeePicker
         employees={mockEmployees}
@@ -114,19 +110,6 @@ describe('ChatEmployeePicker', () => {
     expect(onChange).toHaveBeenCalledWith('jimmy-dev')
   })
 
-  it('calls onSelect with null when COO is clicked', () => {
-    render(
-      <ChatEmployeePicker
-        employees={mockEmployees}
-        selectedEmployee="jimmy-dev"
-        onSelect={onChange}
-        portalName="Jinn"
-      />
-    )
-    fireEvent.click(screen.getByRole('button', { name: /jinn/i }))
-    expect(onChange).toHaveBeenCalledWith(null)
-  })
-
   it('shows selected state on the chosen employee', () => {
     render(
       <ChatEmployeePicker
@@ -137,30 +120,122 @@ describe('ChatEmployeePicker', () => {
       />
     )
     // COO should NOT be selected
-    const cooChip = screen.getByRole('button', { name: /jinn/i })
-    expect(cooChip.getAttribute('aria-pressed')).toBe('false')
+    const cooRow = screen.getByRole('option', { name: /jinn/i })
+    expect(cooRow.getAttribute('aria-selected')).toBe('false')
 
-    // Jimmy Dev should be selected — find the button that contains "Jimmy Dev"
-    const jimmyButtons = screen.getAllByRole('button').filter(
-      btn => btn.textContent?.includes('Jimmy Dev')
+    // Jimmy Dev should be selected
+    const jimmyRow = screen.getAllByRole('option').find(
+      el => el.textContent?.includes('Jimmy Dev')
     )
-    expect(jimmyButtons.length).toBeGreaterThan(0)
-    expect(jimmyButtons[0].getAttribute('aria-pressed')).toBe('true')
+    expect(jimmyRow).toBeDefined()
+    expect(jimmyRow!.getAttribute('aria-selected')).toBe('true')
   })
 
-  it('displays department for each employee', () => {
+  // --- Search / filter ---
+
+  it('has a search input that filters employees by name', () => {
     render(
       <ChatEmployeePicker
-        employees={mockEmployees.slice(0, 3)}
+        employees={mockEmployees}
         selectedEmployee={null}
         onSelect={onChange}
         portalName="Jinn"
       />
     )
-    expect(screen.getByText('platform')).toBeDefined()
-    expect(screen.getByText('pravko')).toBeDefined()
-    expect(screen.getByText('homy')).toBeDefined()
+    const searchInput = screen.getByPlaceholderText(/search/i)
+    expect(searchInput).toBeDefined()
+
+    fireEvent.change(searchInput, { target: { value: 'jimmy' } })
+    // Only Jimmy Dev should be visible
+    expect(screen.getByText('Jimmy Dev')).toBeDefined()
+    expect(screen.queryByText('Pravko Lead')).toBeNull()
+    expect(screen.queryByText('Homy Lead')).toBeNull()
   })
+
+  it('filters employees by department name', () => {
+    render(
+      <ChatEmployeePicker
+        employees={mockEmployees}
+        selectedEmployee={null}
+        onSelect={onChange}
+        portalName="Jinn"
+      />
+    )
+    const searchInput = screen.getByPlaceholderText(/search/i)
+    fireEvent.change(searchInput, { target: { value: 'pravko' } })
+
+    // Both pravko employees should be visible
+    expect(screen.getByText('Pravko Lead')).toBeDefined()
+    expect(screen.getByText('Pravko Writer')).toBeDefined()
+    // Others should not
+    expect(screen.queryByText('Jimmy Dev')).toBeNull()
+  })
+
+  it('shows empty state when search matches nothing', () => {
+    render(
+      <ChatEmployeePicker
+        employees={mockEmployees}
+        selectedEmployee={null}
+        onSelect={onChange}
+        portalName="Jinn"
+      />
+    )
+    const searchInput = screen.getByPlaceholderText(/search/i)
+    fireEvent.change(searchInput, { target: { value: 'zzzzzzz' } })
+
+    expect(screen.getByText(/no employees/i)).toBeDefined()
+  })
+
+  it('COO row is always visible regardless of search', () => {
+    render(
+      <ChatEmployeePicker
+        employees={mockEmployees}
+        selectedEmployee={null}
+        onSelect={onChange}
+        portalName="Jinn"
+      />
+    )
+    const searchInput = screen.getByPlaceholderText(/search/i)
+    fireEvent.change(searchInput, { target: { value: 'jimmy' } })
+
+    // COO always visible
+    expect(screen.getByRole('option', { name: /jinn/i })).toBeDefined()
+  })
+
+  // --- Scrollable container ---
+
+  it('renders a scrollable list container', () => {
+    render(
+      <ChatEmployeePicker
+        employees={mockEmployees}
+        selectedEmployee={null}
+        onSelect={onChange}
+        portalName="Jinn"
+      />
+    )
+    const listbox = screen.getByRole('listbox')
+    expect(listbox).toBeDefined()
+    // Should have overflow-y-auto for scrolling
+    expect(listbox.className).toContain('overflow-y-auto')
+  })
+
+  // --- Rank badges ---
+
+  it('displays rank badges for managers and seniors', () => {
+    render(
+      <ChatEmployeePicker
+        employees={mockEmployees}
+        selectedEmployee={null}
+        onSelect={onChange}
+        portalName="Jinn"
+      />
+    )
+    // Managers get "Mgr" badge, seniors get "Sr"
+    const badges = screen.getAllByText(/^(Mgr|Sr)$/)
+    expect(badges.length).toBeGreaterThan(0)
+  })
+
+  // --- Avatars ---
 
   it('renders avatars for employees', () => {
     render(
@@ -175,7 +250,9 @@ describe('ChatEmployeePicker', () => {
     expect(screen.getByTestId('avatar-pravko-lead')).toBeDefined()
   })
 
-  it('collapses expanded list when "Less" is clicked', () => {
+  // --- Keyboard navigation ---
+
+  it('navigates with arrow keys and selects with Enter', () => {
     render(
       <ChatEmployeePicker
         employees={mockEmployees}
@@ -184,16 +261,35 @@ describe('ChatEmployeePicker', () => {
         portalName="Jinn"
       />
     )
-    // Expand
-    fireEvent.click(screen.getByRole('button', { name: /more/i }))
-    expect(screen.getByText('Reddit Scout')).toBeDefined()
+    const listbox = screen.getByRole('listbox')
 
-    // Collapse
-    fireEvent.click(screen.getByRole('button', { name: /less/i }))
-    expect(screen.queryByText('Reddit Scout')).toBeNull()
+    // Arrow down once from COO → first employee
+    fireEvent.keyDown(listbox, { key: 'ArrowDown' })
+    fireEvent.keyDown(listbox, { key: 'Enter' })
+    expect(onChange).toHaveBeenCalledWith('jimmy-dev')
   })
 
-  it('renders only COO chip when employees array is empty', () => {
+  it('ArrowUp from first employee goes to COO', () => {
+    render(
+      <ChatEmployeePicker
+        employees={mockEmployees}
+        selectedEmployee={null}
+        onSelect={onChange}
+        portalName="Jinn"
+      />
+    )
+    const listbox = screen.getByRole('listbox')
+
+    // Move down then up → back to COO
+    fireEvent.keyDown(listbox, { key: 'ArrowDown' })
+    fireEvent.keyDown(listbox, { key: 'ArrowUp' })
+    fireEvent.keyDown(listbox, { key: 'Enter' })
+    expect(onChange).toHaveBeenCalledWith(null)
+  })
+
+  // --- Empty state ---
+
+  it('renders only COO when employees array is empty', () => {
     render(
       <ChatEmployeePicker
         employees={[]}
@@ -202,11 +298,8 @@ describe('ChatEmployeePicker', () => {
         portalName="Jinn"
       />
     )
-    // COO chip should still render
-    expect(screen.getByRole('button', { name: /jinn/i })).toBeDefined()
-    // No employee chips, no More button
-    const allButtons = screen.getAllByRole('button')
-    expect(allButtons).toHaveLength(1) // Only COO
-    expect(screen.queryByRole('button', { name: /more/i })).toBeNull()
+    expect(screen.getByRole('option', { name: /jinn/i })).toBeDefined()
+    const allOptions = screen.getAllByRole('option')
+    expect(allOptions).toHaveLength(1)
   })
 })
