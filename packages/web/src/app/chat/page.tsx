@@ -15,15 +15,6 @@ import { clearIntermediateMessages } from '@/lib/conversations'
 import { useSettings } from '@/app/settings-provider'
 import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/query-keys'
-import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { Check, EllipsisVertical, Trash2 } from 'lucide-react'
 
@@ -116,7 +107,6 @@ function ChatPage() {
   const [showMoreMenu, setShowMoreMenu] = useState(false)
   const [showSessionPicker, setShowSessionPicker] = useState(false)
   const [copiedField, setCopiedField] = useState<string | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState(false)
   const [focusTrigger, setFocusTrigger] = useState(0)
   const moreMenuRef = useRef<HTMLDivElement>(null)
   const sessionPickerRef = useRef<HTMLDivElement>(null)
@@ -237,17 +227,19 @@ function ChatPage() {
     [selectedId, handleSelect]
   )
 
-  const handleDeleteSession = useCallback((id: string) => {
-    // Session already deleted by sidebar mutation — just clear local state
+  const handleDeleteSession = useCallback(async (id: string) => {
+    try {
+      await deleteSessionMutation.mutateAsync(id)
+    } catch { /* sidebar may have already deleted it */ }
     if (selectedId === id) {
       setSelectedId(null)
       setSessionMeta(null)
     }
     clearIntermediateMessages(id)
     chatTabs.closeTab(chatTabs.tabs.findIndex(t => t.sessionId === id))
-    setConfirmDelete(false)
     setShowMoreMenu(false)
-  }, [selectedId, chatTabs])
+    qc.invalidateQueries({ queryKey: queryKeys.sessions.all })
+  }, [selectedId, chatTabs, deleteSessionMutation, qc])
 
   // ChatPane callbacks
   const handleSessionCreated = useCallback((newId: string) => {
@@ -321,8 +313,8 @@ function ChatPage() {
     { key: 'j', category: 'Navigation', description: 'Next session', action: () => navigateSession(1) },
     { key: 'k', category: 'Navigation', description: 'Previous session', action: () => navigateSession(-1) },
     { key: 'e', category: 'Navigation', description: 'Next employee', action: cycleEmployee },
-    { key: 'Backspace', category: 'Actions', description: 'Delete session', action: () => setConfirmDelete(true), enabled: !!selectedId },
-    { key: 'Delete', category: 'Actions', description: 'Delete session', action: () => setConfirmDelete(true), enabled: !!selectedId },
+    { key: 'Backspace', category: 'Actions', description: 'Delete session', action: () => { if (selectedId && window.confirm('Delete this session?')) handleDeleteSession(selectedId) }, enabled: !!selectedId },
+    { key: 'Delete', category: 'Actions', description: 'Delete session', action: () => { if (selectedId && window.confirm('Delete this session?')) handleDeleteSession(selectedId) }, enabled: !!selectedId },
     { key: 'c', category: 'Actions', description: 'Copy chat', action: copyChat, enabled: !!selectedId },
     { key: 'Escape', category: 'Navigation', description: 'Close overlay', action: () => {
       if (showShortcutOverlay) setShowShortcutOverlay(false)
@@ -347,7 +339,7 @@ function ChatPage() {
     })),
   ], [handleNewChat, navigateSession, cycleEmployee, copyChat, selectedId, showShortcutOverlay, showMoreMenu, chatTabs])
 
-  useKeyboardShortcuts(shortcuts, { isModalOpen: confirmDelete })
+  useKeyboardShortcuts(shortcuts)
 
   // When active tab changes, sync selectedId
   useEffect(() => {
@@ -396,7 +388,7 @@ function ChatPage() {
           )}
           <div className="my-0.5 border-t border-border" />
           <button
-            onClick={() => { setShowMoreMenu(false); setConfirmDelete(true) }}
+            onClick={() => { setShowMoreMenu(false); if (selectedId && window.confirm('Delete this session?')) handleDeleteSession(selectedId) }}
             className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-[var(--system-red)] transition-colors hover:bg-accent"
           >
             <Trash2 className="size-3.5" />
@@ -534,22 +526,6 @@ function ChatPage() {
         />
       )}
 
-      <Dialog open={confirmDelete && !!selectedId} onOpenChange={setConfirmDelete}>
-        <DialogContent showCloseButton={false} className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Delete Session?</DialogTitle>
-            <DialogDescription>
-              This will permanently delete the session and all its messages.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmDelete(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={() => selectedId && handleDeleteSession(selectedId)}>
-              Delete
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </PageLayout>
   )
 }

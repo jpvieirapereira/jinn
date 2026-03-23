@@ -802,7 +802,7 @@ export function ChatSidebar({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search... (/)"
+            placeholder="Search..."
             aria-label="Search chats"
             className="min-w-0 flex-1 bg-transparent text-sm text-foreground outline-none placeholder:text-[var(--text-tertiary)]"
           />

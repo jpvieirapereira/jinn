@@ -47,9 +47,9 @@ describe('ChatSidebar shortcut hints', () => {
     expect(title.toLowerCase()).toContain('n')
   })
 
-  it('renders search input with "/" hint in placeholder', () => {
+  it('renders search input with placeholder', () => {
     render(<ChatSidebar {...defaultProps} />)
-    const searchInput = screen.getByPlaceholderText(/\//)
+    const searchInput = screen.getByPlaceholderText(/search/i)
     expect(searchInput).toBeTruthy()
   })
 })
