@@ -10,13 +10,13 @@ import { ChatPane } from '@/components/chat/chat-pane'
 import { ShortcutOverlay } from '@/components/chat/shortcut-overlay'
 import { useChatTabs } from '@/hooks/use-chat-tabs'
 import { useKeyboardShortcuts, type ShortcutDef } from '@/hooks/use-keyboard-shortcuts'
-import { useDeleteSession } from '@/hooks/use-sessions'
+import { useDeleteSession, useDuplicateSession } from '@/hooks/use-sessions'
 import { clearIntermediateMessages } from '@/lib/conversations'
 import { useSettings } from '@/app/settings-provider'
 import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/lib/query-keys'
 import { cn } from '@/lib/utils'
-import { Check, EllipsisVertical, Trash2 } from 'lucide-react'
+import { Check, Copy, EllipsisVertical, Trash2 } from 'lucide-react'
 
 function getOnboardingPrompt(portalName: string, userMessage: string) {
   return `This is your first time being activated. The user just set up ${portalName} and opened the web dashboard for the first time.
@@ -117,6 +117,7 @@ function ChatPage() {
   // When set, the current session is a stub awaiting the user's first message
   const stubSessionRef = useRef(false)
   const deleteSessionMutation = useDeleteSession()
+  const duplicateSessionMutation = useDuplicateSession()
   const qc = useQueryClient()
   const [showShortcutOverlay, setShowShortcutOverlay] = useState(false)
   const sidebarOrderRef = useRef<SidebarOrder>({ sessionIds: [], employeeNames: [], employeeSessionMap: {} })
@@ -240,6 +241,32 @@ function ChatPage() {
     setShowMoreMenu(false)
     qc.invalidateQueries({ queryKey: queryKeys.sessions.all })
   }, [selectedId, chatTabs, deleteSessionMutation, qc])
+
+  const handleDuplicate = useCallback(async (id: string) => {
+    try {
+      const result = await duplicateSessionMutation.mutateAsync(id) as { id?: string; title?: string; employee?: string }
+      if (result?.id) {
+        setSelectedId(result.id)
+        chatTabs.openTab({
+          sessionId: result.id,
+          label: result.title || 'Duplicated Chat',
+          status: 'idle',
+          unread: false,
+          pinned: true,
+          employeeName: result.employee || undefined,
+        })
+        setShowMoreMenu(false)
+        qc.invalidateQueries({ queryKey: queryKeys.sessions.all })
+      }
+    } catch (err: any) {
+      window.alert(`Duplicate failed: ${err.message || 'Unknown error'}`)
+    }
+  }, [chatTabs, duplicateSessionMutation, qc])
+
+  const handleDuplicateFromSidebar = useCallback((newSessionId: string) => {
+    chatTabs.openTab({ sessionId: newSessionId, label: 'Duplicated Chat', status: 'idle', unread: false, pinned: true })
+    qc.invalidateQueries({ queryKey: queryKeys.sessions.all })
+  }, [chatTabs, qc])
 
   // ChatPane callbacks
   const handleSessionCreated = useCallback((newId: string) => {
@@ -386,6 +413,14 @@ function ChatPage() {
               Copy CLI Resume Command
             </button>
           )}
+          <button
+            onClick={() => { if (selectedId) handleDuplicate(selectedId) }}
+            disabled={duplicateSessionMutation.isPending}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-foreground transition-colors hover:bg-accent disabled:opacity-50"
+          >
+            <Copy className="size-3.5" />
+            <span className="flex-1">{duplicateSessionMutation.isPending ? 'Duplicating...' : 'Duplicate...'}</span>
+          </button>
           <div className="my-0.5 border-t border-border" />
           <button
             onClick={() => { setShowMoreMenu(false); if (selectedId && window.confirm('Delete this session?')) handleDeleteSession(selectedId) }}
@@ -457,6 +492,7 @@ function ChatPage() {
               onSelect={handleSelect}
               onNewChat={handleNewChat}
               onDelete={handleDeleteSession}
+              onDuplicate={handleDuplicateFromSidebar}
               onSessionsLoaded={handleSessionsLoaded}
               onEmployeeSessionsAvailable={handleEmployeeSessionsAvailable}
               onOrderComputed={handleOrderComputed}
@@ -486,6 +522,7 @@ function ChatPage() {
               onSelect={handleSelect}
               onNewChat={handleNewChat}
               onDelete={handleDeleteSession}
+              onDuplicate={handleDuplicateFromSidebar}
               onSessionsLoaded={handleSessionsLoaded}
               onEmployeeSessionsAvailable={handleEmployeeSessionsAvailable}
               onOrderComputed={handleOrderComputed}

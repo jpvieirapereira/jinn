@@ -109,6 +109,8 @@ export const api = {
   updateSession: (id: string, data: { title?: string }) =>
     put<Record<string, unknown>>(`/api/sessions/${id}`, data),
   deleteSession: (id: string) => del<Record<string, unknown>>(`/api/sessions/${id}`),
+  duplicateSession: (id: string) =>
+    post<Record<string, unknown>>(`/api/sessions/${id}/duplicate`, {}),
   bulkDeleteSessions: (ids: string[]) =>
     post<{ status: string; count: number }>("/api/sessions/bulk-delete", { ids }),
   createSession: (data: Record<string, unknown>) =>

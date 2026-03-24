@@ -17,6 +17,7 @@ import {
   UpdateSessionFields,
   deleteSession,
   deleteSessions,
+  duplicateSession,
   insertMessage,
   getMessages,
   enqueueQueueItem,
@@ -26,6 +27,7 @@ import {
   listAllPendingQueueItems,
   getFile,
 } from "../sessions/registry.js";
+import { forkEngineSession } from "../sessions/fork.js";
 import {
   CONFIG_PATH,
   CRON_JOBS,
@@ -469,6 +471,45 @@ export async function handleApiRequest(
       logger.info(`Session ${params.id} reset via API (cleared engineSessions, engineOverride, engineSessionId, lastError)`);
       context.emit("session:updated", { sessionId: params.id });
       return json(res, { status: "reset", sessionId: params.id });
+    }
+
+    // POST /api/sessions/:id/duplicate — duplicate a session (snapshot fork)
+    params = matchRoute("/api/sessions/:id/duplicate", pathname);
+    if (method === "POST" && params) {
+      const source = getSession(params.id);
+      if (!source) return notFound(res);
+      if (!source.engineSessionId) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Session has no engine session ID — cannot duplicate" }));
+        return;
+      }
+
+      let newSessionId: string | null = null;
+      try {
+        // 1. Duplicate session + messages in the registry
+        const { session: newSession, messageCount } = duplicateSession(params.id);
+        newSessionId = newSession.id;
+
+        // 2. Fork the engine session (Claude/Codex/Gemini)
+        const forkResult = forkEngineSession(source.engine, source.engineSessionId, JINN_HOME);
+
+        // 3. Store the new engine session ID
+        updateSession(newSession.id, { engineSessionId: forkResult.engineSessionId });
+
+        const result = getSession(newSession.id)!;
+        logger.info(`Session duplicated: ${params.id} → ${newSession.id} (engine: ${forkResult.engineSessionId}, ${messageCount} messages)`);
+        context.emit("session:created", { sessionId: newSession.id });
+        return json(res, serializeSession(result, context));
+      } catch (err: any) {
+        // Clean up orphaned session if the engine fork failed after DB insert
+        if (newSessionId) {
+          try { deleteSession(newSessionId); } catch { /* best effort */ }
+        }
+        logger.error(`Failed to duplicate session ${params.id}: ${err.message}`);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: `Duplicate failed: ${err.message}` }));
+        return;
+      }
     }
 
     // DELETE /api/sessions/:id/queue/:itemId — cancel specific item

@@ -1,12 +1,12 @@
 "use client"
 
 import { useEffect, useState, useRef, useCallback, useMemo, startTransition } from "react"
-import { ChevronDown, Clock3, EllipsisVertical, Pencil, Pin, Plus, Search, Trash2, X } from "lucide-react"
+import { ChevronDown, Clock3, Copy, EllipsisVertical, Pencil, Pin, Plus, Search, Trash2, X } from "lucide-react"
 import { api, type Employee } from "@/lib/api"
 import { EmployeeAvatar } from "@/components/ui/employee-avatar"
 import { useSettings } from "@/app/settings-provider"
 import { cleanPreview } from "@/lib/clean-preview"
-import { useSessions, useUpdateSession, useDeleteSession, useBulkDeleteSessions } from "@/hooks/use-sessions"
+import { useSessions, useUpdateSession, useDeleteSession, useBulkDeleteSessions, useDuplicateSession } from "@/hooks/use-sessions"
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -59,6 +59,7 @@ interface ChatSidebarProps {
   onSelect: (id: string) => void
   onNewChat: () => void
   onDelete?: (id: string) => void
+  onDuplicate?: (newSessionId: string) => void
   onSessionsLoaded?: (sessions: Session[]) => void
   onEmployeeSessionsAvailable?: (sessions: Session[]) => void
   onOrderComputed?: (order: SidebarOrder) => void
@@ -239,6 +240,7 @@ export function ChatSidebar({
   onSelect,
   onNewChat,
   onDelete,
+  onDuplicate,
   onSessionsLoaded,
   onEmployeeSessionsAvailable,
   onOrderComputed,
@@ -259,6 +261,7 @@ export function ChatSidebar({
   const updateSessionMutation = useUpdateSession()
   const deleteSessionMutation = useDeleteSession()
   const bulkDeleteMutation = useBulkDeleteSessions()
+  const duplicateSessionMutation = useDuplicateSession()
 
   const sessions = useMemo(() => {
     if (!rawSessions) return []
@@ -451,6 +454,21 @@ export function ChatSidebar({
         }
       })
     } catch {}
+  }
+
+  async function handleDuplicate(sessionId: string) {
+    try {
+      const result = await duplicateSessionMutation.mutateAsync(sessionId) as { id?: string }
+      if (result?.id) {
+        onDuplicate?.(result.id)
+        onSelect(result.id)
+        // Auto-start rename on the new session
+        setRenamingSessionId(result.id)
+        renameCancelledRef.current = false
+      }
+    } catch (err: any) {
+      window.alert(`Duplicate failed: ${err.message || "Unknown error"}`)
+    }
   }
 
   const displayed = search.trim()
@@ -664,6 +682,9 @@ export function ChatSidebar({
                 <DropdownMenuItem onClick={() => togglePin(session.id)}>
                   {isPinned ? "Unpin" : "Pin"}
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => handleDuplicate(session.id)}>
+                  Duplicate...
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onClick={() => setDeleteTarget({ type: "session", id: session.id, label: cleanPreview(sessionTitle) || "Untitled" })}>
                   Delete session
@@ -678,6 +699,9 @@ export function ChatSidebar({
           </ContextMenuItem>
           <ContextMenuItem onClick={() => togglePin(session.id)}>
             {isPinned ? "Unpin" : "Pin"}
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => handleDuplicate(session.id)}>
+            Duplicate...
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem variant="destructive" onClick={() => setDeleteTarget({ type: "session", id: session.id, label: cleanPreview(sessionTitle) || "Untitled" })}>

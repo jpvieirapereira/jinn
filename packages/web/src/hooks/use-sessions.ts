@@ -96,3 +96,11 @@ export function useResetSession() {
     onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.sessions.all }),
   })
 }
+
+export function useDuplicateSession() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (id: string) => api.duplicateSession(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: queryKeys.sessions.all }),
+  })
+}
