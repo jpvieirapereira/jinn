@@ -212,6 +212,42 @@ export interface Employee {
   effortLevel?: string;
   /** Whether to notify the parent session when this employee's child session completes. Default: true */
   alwaysNotify?: boolean;
+  /** Who this employee reports to. String = single parent. Array = primary + dotted-line (future). */
+  reportsTo?: string | string[];
+}
+
+/** A node in the resolved org tree. Wraps an Employee with computed hierarchy data. */
+export interface OrgNode {
+  employee: Employee;
+  /** Resolved primary parent name (null = reports to root) */
+  parentName: string | null;
+  /** Names of direct reports */
+  directReports: string[];
+  /** Depth in tree (root = 0, root's reports = 1, etc.) */
+  depth: number;
+  /** Path from root to this node (excluding virtual root), e.g. ["pravko-lead", "pravko-writer"] */
+  chain: string[];
+}
+
+/** Warning about a hierarchy issue. */
+export interface OrgWarning {
+  employee: string;
+  type: "broken_ref" | "cycle" | "self_ref" | "cross_department" | "multiple_executives";
+  message: string;
+  /** The invalid reportsTo value that caused this warning */
+  ref?: string;
+}
+
+/** The fully resolved org hierarchy. */
+export interface OrgHierarchy {
+  /** Root node name — executive employee name, or null if no executive YAML exists */
+  root: string | null;
+  /** All nodes keyed by employee name */
+  nodes: Record<string, OrgNode>;
+  /** Ordered list for flat iteration (topological/BFS order, root first) */
+  sorted: string[];
+  /** Any resolution warnings */
+  warnings: OrgWarning[];
 }
 
 export interface Department {
