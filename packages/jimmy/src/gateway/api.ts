@@ -60,6 +60,7 @@ export interface ApiContext {
   getConfig: () => JinnConfig;
   emit: (event: string, payload: unknown) => void;
   connectors: Map<string, import("../shared/types.js").Connector>;
+  reloadConnectorInstances?: () => Promise<{ started: string[]; stopped: string[]; errors: string[] }>;
 }
 
 export function resumePendingWebQueueItems(context: ApiContext): void {
@@ -246,12 +247,33 @@ function serverError(res: ServerResponse, message: string): void {
   json(res, { error: message }, 500);
 }
 
+const SANITIZED_KEYS = new Set(["token", "botToken", "signingSecret", "appToken"]);
+
 function deepMerge(target: Record<string, unknown>, source: Record<string, unknown>): Record<string, unknown> {
   const result = { ...target };
   for (const key of Object.keys(source)) {
     const sv = source[key];
     const tv = target[key];
-    if (sv && typeof sv === "object" && !Array.isArray(sv) && tv && typeof tv === "object" && !Array.isArray(tv)) {
+    // Skip sanitized secret placeholders — keep original value
+    if (SANITIZED_KEYS.has(key) && sv === "***") continue;
+    if (Array.isArray(sv)) {
+      // For arrays (e.g. instances), preserve secrets from matching items
+      if (Array.isArray(tv)) {
+        result[key] = sv.map((item: unknown) => {
+          if (item && typeof item === "object" && !Array.isArray(item)) {
+            const srcItem = item as Record<string, unknown>;
+            // Find matching target item by id
+            const matchTarget = (tv as unknown[]).find(
+              (t) => t && typeof t === "object" && (t as Record<string, unknown>).id === srcItem.id
+            ) as Record<string, unknown> | undefined;
+            if (matchTarget) return deepMerge(matchTarget, srcItem);
+          }
+          return item;
+        });
+      } else {
+        result[key] = sv;
+      }
+    } else if (sv && typeof sv === "object" && !Array.isArray(sv) && tv && typeof tv === "object" && !Array.isArray(tv)) {
       result[key] = deepMerge(tv as Record<string, unknown>, sv as Record<string, unknown>);
     } else {
       result[key] = sv;
@@ -1118,20 +1140,32 @@ export async function handleApiRequest(
     if (method === "GET" && pathname === "/api/config") {
       const config = context.getConfig();
       // Sanitize: remove any secrets/tokens from connectors
+      const rawConnectors = config.connectors || {};
+      const sanitizedConnectors: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(rawConnectors)) {
+        if (k === "instances" && Array.isArray(v)) {
+          sanitizedConnectors.instances = v.map((inst: any) => ({
+            ...inst,
+            token: inst?.token ? "***" : undefined,
+            signingSecret: inst?.signingSecret ? "***" : undefined,
+            botToken: inst?.botToken ? "***" : undefined,
+            appToken: inst?.appToken ? "***" : undefined,
+          }));
+        } else if (v && typeof v === "object") {
+          sanitizedConnectors[k] = {
+            ...v,
+            token: (v as any)?.token ? "***" : undefined,
+            signingSecret: (v as any)?.signingSecret ? "***" : undefined,
+            botToken: (v as any)?.botToken ? "***" : undefined,
+            appToken: (v as any)?.appToken ? "***" : undefined,
+          };
+        } else {
+          sanitizedConnectors[k] = v;
+        }
+      }
       const sanitized = {
         ...config,
-        connectors: Object.fromEntries(
-          Object.entries(config.connectors || {}).map(([k, v]) => [
-            k,
-            {
-              ...v,
-              token: v?.token ? "***" : undefined,
-              signingSecret: v?.signingSecret ? "***" : undefined,
-              botToken: v?.botToken ? "***" : undefined,
-              appToken: v?.appToken ? "***" : undefined,
-            },
-          ]),
-        ),
+        connectors: sanitizedConnectors,
       };
       return json(res, sanitized);
     }
@@ -1211,9 +1245,26 @@ export async function handleApiRequest(
       return json(res, { lines });
     }
 
-    // POST /api/connectors/discord/incoming — receive proxied Discord messages from primary instance
-    if (method === "POST" && pathname === "/api/connectors/discord/incoming") {
-      const connector = context.connectors.get("discord");
+    // POST /api/connectors/reload — stop all instance connectors and restart from config
+    if (method === "POST" && pathname === "/api/connectors/reload") {
+      if (!context.reloadConnectorInstances) {
+        return json(res, { error: "Connector reload not available" }, 501);
+      }
+      try {
+        const result = await context.reloadConnectorInstances();
+        context.emit("connectors:reloaded", result);
+        return json(res, result);
+      } catch (err) {
+        return json(res, { error: err instanceof Error ? err.message : String(err) }, 500);
+      }
+    }
+
+    // POST /api/connectors/:id/incoming — receive proxied Discord messages from primary instance
+    // Supports both the legacy /api/connectors/discord/incoming and named instance ids
+    params = matchRoute("/api/connectors/:id/incoming", pathname);
+    if (method === "POST" && params && params.id) {
+      // Try the exact instance id first, then fall back to "discord" for the legacy path
+      const connector = context.connectors.get(params.id) ?? (params.id === "discord" ? context.connectors.get("discord") : undefined);
       if (!connector) return notFound(res);
       if (!("deliverMessage" in connector)) {
         return json(res, { error: "Discord connector is not in remote mode" }, 400);
@@ -1241,7 +1292,7 @@ export async function handleApiRequest(
       );
 
       const incomingMsg: IncomingMessage = {
-        connector: "discord",
+        connector: params.id,
         source: "discord",
         sessionKey: body.sessionKey,
         channel: body.channel,
@@ -1261,9 +1312,11 @@ export async function handleApiRequest(
       return json(res, { status: "delivered" });
     }
 
-    // POST /api/connectors/discord/proxy — proxy connector operations from remote instances
-    if (method === "POST" && pathname === "/api/connectors/discord/proxy") {
-      const connector = context.connectors.get("discord");
+    // POST /api/connectors/:id/proxy — proxy connector operations from remote instances
+    // Supports both the legacy /api/connectors/discord/proxy and named instance ids
+    params = matchRoute("/api/connectors/:id/proxy", pathname);
+    if (method === "POST" && params && params.id) {
+      const connector = context.connectors.get(params.id) ?? (params.id === "discord" ? context.connectors.get("discord") : undefined);
       if (!connector) return notFound(res);
 
       const _parsed = await readJsonBody(req, res);
@@ -1337,8 +1390,10 @@ export async function handleApiRequest(
 
     // GET /api/connectors — list available connectors
     if (method === "GET" && pathname === "/api/connectors") {
-      const connectors = Array.from(context.connectors.values()).map((connector) => ({
+      const connectors = Array.from(context.connectors.entries()).map(([instanceId, connector]) => ({
         name: connector.name,
+        instanceId,
+        employee: connector.getEmployee?.() ?? undefined,
         ...connector.getHealth(),
       }));
       return json(res, connectors);

@@ -102,6 +102,8 @@ export interface Connector {
   editMessage(target: Target, text: string): Promise<void>;
   setTypingStatus?(channelId: string, threadTs: string | undefined, status: string): Promise<void>;
   onMessage(handler: (msg: IncomingMessage) => void): void;
+  /** Return the bound employee name, if any */
+  getEmployee?(): string | undefined;
 }
 
 export interface IncomingMessage {
@@ -302,6 +304,10 @@ export interface McpGlobalConfig {
 export interface WebConnectorConfig {}
 
 export interface SlackConnectorConfig {
+  /** Unique instance identifier (e.g. "slack-support") */
+  id?: string;
+  /** Employee to handle messages from this connector instance */
+  employee?: string;
   appToken: string;
   botToken: string;
   allowFrom?: string | string[];
@@ -309,6 +315,10 @@ export interface SlackConnectorConfig {
 }
 
 export interface DiscordConnectorConfig {
+  /** Unique instance identifier (e.g. "discord-vox") */
+  id?: string;
+  /** Employee to handle messages from this connector instance */
+  employee?: string;
   botToken?: string;       // Make optional — not needed in proxy mode
   allowFrom?: string | string[];
   ignoreOldMessagesOnBoot?: boolean;
@@ -328,11 +338,26 @@ export interface TelegramConnectorConfig {
 }
 
 export interface WhatsAppConnectorConfig {
+  /** Unique instance identifier (e.g. "whatsapp-main") */
+  id?: string;
+  /** Employee to handle messages from this connector instance */
+  employee?: string;
   /** Where to store session credentials (default: JINN_HOME/.whatsapp-auth) */
   authDir?: string;
   /** Allowed phone numbers in JID format (e.g. "447700900000@s.whatsapp.net") — empty = allow all */
   allowFrom?: string[];
   ignoreOldMessagesOnBoot?: boolean;
+}
+
+export interface ConnectorInstance {
+  /** Unique instance ID */
+  id: string;
+  /** Connector type */
+  type: "discord" | "discord-remote" | "slack" | "whatsapp" | "telegram";
+  /** Employee to bind to this connector */
+  employee?: string;
+  /** Type-specific configuration */
+  [key: string]: unknown;
 }
 
 export interface PortalConfig {
@@ -357,6 +382,8 @@ export interface JinnConfig {
     telegram?: TelegramConnectorConfig;
     discord?: DiscordConnectorConfig;
     whatsapp?: WhatsAppConnectorConfig;
+    /** Named connector instances — allows multiple connectors of the same type */
+    instances?: ConnectorInstance[];
   };
   logging: { file: boolean; stdout: boolean; level: string };
   mcp?: McpGlobalConfig;
