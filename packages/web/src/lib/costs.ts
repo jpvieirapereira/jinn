@@ -85,10 +85,11 @@ export interface CostSummary {
 // ── Pricing table (per 1M tokens) ────────────────────────────
 
 const PRICING: Record<string, ModelPricing> = {
+  'claude-opus-4-7':     { inputPer1M: 15, outputPer1M: 75 },
+  'claude-opus-4-6':     { inputPer1M: 15, outputPer1M: 75 },
   'claude-sonnet-4-6':   { inputPer1M: 3, outputPer1M: 15 },
   'claude-sonnet-4-5':   { inputPer1M: 3, outputPer1M: 15 },
   'claude-haiku-4-5':    { inputPer1M: 0.80, outputPer1M: 4 },
-  'claude-opus-4-6':     { inputPer1M: 15, outputPer1M: 75 },
   'claude-3-5-sonnet':   { inputPer1M: 3, outputPer1M: 15 },
   'claude-3-5-haiku':    { inputPer1M: 0.80, outputPer1M: 4 },
   'claude-3-haiku':      { inputPer1M: 0.25, outputPer1M: 1.25 },

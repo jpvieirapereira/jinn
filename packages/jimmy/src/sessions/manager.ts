@@ -784,10 +784,33 @@ export class SessionManager {
       return true;
     }
 
-    if (text.startsWith("/model")) {
+    if (text === "/models" || text.startsWith("/models ")) {
+      const session = getSessionBySessionKey(msg.sessionKey);
+      const currentModel = session?.model
+        || this.config.engines[(session?.engine ?? this.config.engines.default) as "claude" | "codex" | "gemini"]?.model
+        || "default";
+      const info = [
+        "*Claude*",
+        "- `opus` — Opus 4.7",
+        "- `opus[1m]` — Opus 4.7 (1M context)",
+        "- `sonnet` — Sonnet 4.6",
+        "- `sonnet[1m]` — Sonnet 4.6 (1M context)",
+        "- `haiku` — Haiku 4.5",
+        "- `opusplan` — Opus plan + Sonnet execute",
+        "",
+        "*Codex*",
+        "- `gpt-5.4`, `gpt-5.3-codex`, `codex-mini-latest`",
+        "",
+        `Current: \`${currentModel}\` · Switch with \`/model <alias>\``,
+      ].join("\n");
+      await connector.replyMessage(target, info);
+      return true;
+    }
+
+    if (text === "/model" || text.startsWith("/model ")) {
       const nextModel = text.slice("/model".length).trim();
       if (!nextModel) {
-        await connector.replyMessage(target, "Usage: /model <model-name>");
+        await connector.replyMessage(target, "Usage: /model <model-name> (see /models)");
         return true;
       }
 

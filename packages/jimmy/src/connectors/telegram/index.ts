@@ -209,6 +209,105 @@ export class TelegramConnector implements Connector {
     });
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async sendPhoto(target: Target, photo: string | Buffer, options: any = {}): Promise<string | undefined> {
+    try {
+      const result = await this.bot.sendPhoto(target.channel, photo as any, { parse_mode: "Markdown", ...options });
+      return String(result.message_id);
+    } catch (err) {
+      logger.error(`[telegram] sendPhoto failed: ${err}`);
+      return undefined;
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async sendDocument(target: Target, doc: string | Buffer, options: any = {}): Promise<string | undefined> {
+    try {
+      const result = await this.bot.sendDocument(target.channel, doc as any, { parse_mode: "Markdown", ...options });
+      return String(result.message_id);
+    } catch (err) {
+      logger.error(`[telegram] sendDocument failed: ${err}`);
+      return undefined;
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async sendVideo(target: Target, video: string | Buffer, options: any = {}): Promise<string | undefined> {
+    try {
+      const result = await this.bot.sendVideo(target.channel, video as any, { parse_mode: "Markdown", ...options });
+      return String(result.message_id);
+    } catch (err) {
+      logger.error(`[telegram] sendVideo failed: ${err}`);
+      return undefined;
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async sendAudio(target: Target, audio: string | Buffer, options: any = {}): Promise<string | undefined> {
+    try {
+      const result = await this.bot.sendAudio(target.channel, audio as any, { parse_mode: "Markdown", ...options });
+      return String(result.message_id);
+    } catch (err) {
+      logger.error(`[telegram] sendAudio failed: ${err}`);
+      return undefined;
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async sendVoice(target: Target, voice: string | Buffer, options: any = {}): Promise<string | undefined> {
+    try {
+      const result = await this.bot.sendVoice(target.channel, voice as any, options);
+      return String(result.message_id);
+    } catch (err) {
+      logger.error(`[telegram] sendVoice failed: ${err}`);
+      return undefined;
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async sendAnimation(target: Target, animation: string | Buffer, options: any = {}): Promise<string | undefined> {
+    try {
+      const result = await this.bot.sendAnimation(target.channel, animation as any, { parse_mode: "Markdown", ...options });
+      return String(result.message_id);
+    } catch (err) {
+      logger.error(`[telegram] sendAnimation failed: ${err}`);
+      return undefined;
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async sendSticker(target: Target, sticker: string | Buffer, options: any = {}): Promise<string | undefined> {
+    try {
+      const result = await this.bot.sendSticker(target.channel, sticker as any, options);
+      return String(result.message_id);
+    } catch (err) {
+      logger.error(`[telegram] sendSticker failed: ${err}`);
+      return undefined;
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async sendMediaGroup(target: Target, media: any[], options: any = {}): Promise<string[] | undefined> {
+    try {
+      const results = await this.bot.sendMediaGroup(target.channel, media, options);
+      return results.map((r) => String(r.message_id));
+    } catch (err) {
+      logger.error(`[telegram] sendMediaGroup failed: ${err}`);
+      return undefined;
+    }
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async sendLocation(target: Target, latitude: number, longitude: number, options: any = {}): Promise<string | undefined> {
+    try {
+      const result = await this.bot.sendLocation(target.channel, latitude, longitude, options);
+      return String(result.message_id);
+    } catch (err) {
+      logger.error(`[telegram] sendLocation failed: ${err}`);
+      return undefined;
+    }
+  }
+
   onMessage(handler: (msg: IncomingMessage) => void): void {
     this.handler = handler;
   }
