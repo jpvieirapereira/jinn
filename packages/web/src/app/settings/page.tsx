@@ -952,7 +952,8 @@ export default function SettingsPage() {
                       updateConfig(["engines", "claude", "model"], v)
                     }
                     options={[
-                      { value: "opus", label: "Opus (claude-opus-4-6)" },
+                      { value: "opus", label: "Opus (claude-opus-4-7)" },
+                      { value: "opus[1m]", label: "Opus 1M (claude-opus-4-7 · 1M context)" },
                       { value: "sonnet", label: "Sonnet (claude-sonnet-4-6)" },
                       { value: "haiku", label: "Haiku (claude-haiku-4-5)" },
                     ]}

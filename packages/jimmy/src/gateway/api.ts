@@ -1450,21 +1450,73 @@ Handle this as a priority request from a colleague.`;
       return json(res, { status: "ok", messageId });
     }
 
-    // POST /api/connectors/:name/send — send a message via a connector
+    // POST /api/connectors/:name/send — send a message or media via a connector
     params = matchRoute("/api/connectors/:name/send", pathname);
     if (method === "POST" && params) {
-      const connector = context.connectors.get(params.name);
+      const connector = context.connectors.get(params.name) as any;
       if (!connector) return notFound(res);
       const _parsed = await readJsonBody(req, res);
       if (!_parsed.ok) return;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const body = _parsed.body as any;
-      if (!body.channel || !body.text) return badRequest(res, "channel and text are required");
-      await connector.sendMessage(
-        { channel: body.channel, thread: body.thread },
-        body.text,
-      );
-      return json(res, { status: "sent" });
+      if (!body.channel) return badRequest(res, "channel is required");
+      const target = { channel: body.channel, thread: body.thread };
+      const mediaType = body.type || "text";
+      let messageId: string | string[] | undefined;
+      switch (mediaType) {
+        case "text":
+          if (!body.text) return badRequest(res, "text is required for type 'text'");
+          messageId = await connector.sendMessage(target, body.text);
+          break;
+        case "photo":
+          if (!body.file) return badRequest(res, "file is required for type 'photo'");
+          if (typeof connector.sendPhoto !== "function") return badRequest(res, "connector does not support sendPhoto");
+          messageId = await connector.sendPhoto(target, body.file, { caption: body.caption, ...(body.options || {}) });
+          break;
+        case "document":
+          if (!body.file) return badRequest(res, "file is required for type 'document'");
+          if (typeof connector.sendDocument !== "function") return badRequest(res, "connector does not support sendDocument");
+          messageId = await connector.sendDocument(target, body.file, { caption: body.caption, ...(body.options || {}) });
+          break;
+        case "video":
+          if (!body.file) return badRequest(res, "file is required for type 'video'");
+          if (typeof connector.sendVideo !== "function") return badRequest(res, "connector does not support sendVideo");
+          messageId = await connector.sendVideo(target, body.file, { caption: body.caption, ...(body.options || {}) });
+          break;
+        case "audio":
+          if (!body.file) return badRequest(res, "file is required for type 'audio'");
+          if (typeof connector.sendAudio !== "function") return badRequest(res, "connector does not support sendAudio");
+          messageId = await connector.sendAudio(target, body.file, { caption: body.caption, ...(body.options || {}) });
+          break;
+        case "voice":
+          if (!body.file) return badRequest(res, "file is required for type 'voice'");
+          if (typeof connector.sendVoice !== "function") return badRequest(res, "connector does not support sendVoice");
+          messageId = await connector.sendVoice(target, body.file, { ...(body.options || {}) });
+          break;
+        case "animation":
+          if (!body.file) return badRequest(res, "file is required for type 'animation'");
+          if (typeof connector.sendAnimation !== "function") return badRequest(res, "connector does not support sendAnimation");
+          messageId = await connector.sendAnimation(target, body.file, { caption: body.caption, ...(body.options || {}) });
+          break;
+        case "sticker":
+          if (!body.file) return badRequest(res, "file is required for type 'sticker'");
+          if (typeof connector.sendSticker !== "function") return badRequest(res, "connector does not support sendSticker");
+          messageId = await connector.sendSticker(target, body.file, { ...(body.options || {}) });
+          break;
+        case "media_group":
+          if (!body.media || !Array.isArray(body.media)) return badRequest(res, "media array is required for type 'media_group'");
+          if (typeof connector.sendMediaGroup !== "function") return badRequest(res, "connector does not support sendMediaGroup");
+          messageId = await connector.sendMediaGroup(target, body.media, { ...(body.options || {}) });
+          break;
+        case "location":
+          if (body.latitude == null || body.longitude == null) return badRequest(res, "latitude and longitude are required for type 'location'");
+          if (typeof connector.sendLocation !== "function") return badRequest(res, "connector does not support sendLocation");
+          messageId = await connector.sendLocation(target, body.latitude, body.longitude, { ...(body.options || {}) });
+          break;
+        default:
+          return badRequest(res, `Unknown media type: ${mediaType}`);
+      }
+      return json(res, { status: "sent", messageId });
     }
 
     // GET /api/connectors/whatsapp/qr — return current QR code as PNG data URL
